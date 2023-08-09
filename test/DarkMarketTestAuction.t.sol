@@ -1,62 +1,89 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "../lib/forge-std/src/Test.sol";
 import "../src/DarkMarketAuction.sol";
 import "./MockERC721.t.sol";
 
-contract DarkMarketAuctionTest {
+contract DarkMarketAuctionTest is Test {
     DarkMarketAuction auction;
-    MockERC721 testToken;
+    MockERC721 token;
+    address payable royaltyRecipient;
 
-    // Setup before each test
     function setUp() public {
-        testToken = new MockERC721("TestToken", "TT");
-        auction = new DarkMarketAuction(address(testToken), 500); // 5% fee
+        royaltyRecipient = payable(address(0x1234567890123456789012345678901234567890)); // Example address
+        auction = new DarkMarketAuction(500, 500, royaltyRecipient); // 5% fee, 5% royalty
+        token = new MockERC721("MockToken", "MTK");
     }
 
-    // Test starting an auction
-function testStartAuction() public {
-    testToken.mint(address(this), 1);  // Mint token to this contract
-    testToken.approve(address(auction), 1);
-    auction.startAuction(1, 1 ether, 1 days);
+    function testStartAuction() public {
+        token.mint(address(this), 1);
+        token.approve(address(auction), 1);
+        address[] memory tokenAddresses = new address[](1);
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenAddresses[0] = address(token);
+        tokenIds[0] = 1;
+        auction.startAuction(100 ether, 1 hours, tokenAddresses, tokenIds);
+    }
+
+    function testFailBidWithoutPreBid() public {
+        testStartAuction();
+        auction.bid{value: 110 ether}(block.timestamp, 110 ether, 5 ether);
+    }
+
+    function testPreBid() public {
+    testStartAuction();
+    auction.preBid{value: 2 ether}(block.timestamp, 2 ether, 0.1 ether);
+    }
+
+    function testOpenAuction() public {
+    testPreBid();
+    vm.warp(block.timestamp + 50 minutes);
+    auction.openAuction(block.timestamp);
 }
 
-// Test placing a bid
 function testBid() public {
-    testToken.mint(address(this), 2);  // Mint token to this contract
-    testToken.approve(address(auction), 2);
-    auction.startAuction(2, 1 ether, 1 days);
-    auction.bid{value: 2 ether}(2, 2 ether, 0.1 ether); // Assuming a bid incentive of 0.1 ether
+    testOpenAuction();
+    auction.bid{value: 3 ether}(block.timestamp, 3 ether, 0.1 ether);  // Ensure the sum of bid and incentive matches the ether sent
 }
 
-// Test outbidding and ensuring the initial bidder receives their bid with the incentive
-function testOutbidWithIncentive() public {
-    uint256 tokenId = 3;
-    uint256 initialAmount = 0.1 ether;
-    uint256 initialBid = 1 ether;
-    uint256 initialBidIncentive = 0.1 ether;
-    uint256 newBid = 1.2 ether; // Increased the new bid
-    uint256 newBidIncentive = 0.1 ether;
-
-    // Mint token and start auction
-    testToken.mint(address(this), tokenId);
-    testToken.approve(address(auction), tokenId);
-    auction.startAuction(tokenId, initialAmount, 1 days);
-
-    // Initial bid
-    auction.bid{value: initialBid + initialBidIncentive}(tokenId, initialBid, initialBidIncentive);
-
-    // Check initial bidder balance before outbidding
-    uint256 initialBidderBalanceBefore = address(this).balance;
-
-    // Outbid the initial bidder
-    auction.bid{value: newBid + newBidIncentive}(tokenId, newBid, newBidIncentive);
-
-    // Check initial bidder balance after being outbid
-    uint256 initialBidderBalanceAfter = address(this).balance;
-
-    // Confirm that the initial bidder received their bid back plus the incentive
-    assert(initialBidderBalanceAfter == initialBidderBalanceBefore + initialBid + initialBidIncentive);
+function testFinalizeAuction() public {
+    testBid();
+    vm.warp(block.timestamp + 2 hours);
+    auction.finalizeAuction(block.timestamp);
 }
 
+    function testFailCancelAuctionAfterBid() public {
+        testPreBid();
+        auction.cancelAuction(block.timestamp);
+    }
+
+    function testCancelAuctionBeforeBid() public {
+        testStartAuction();
+        auction.cancelAuction(block.timestamp);
+    }
+
+    function testSetFeePercentage() public {
+        auction.setFeePercentage(600); // Setting to 6%
+        assertEq(auction.feePercentage(), 600);
+    }
+
+    function testFailSetFeePercentageAboveLimit() public {
+        auction.setFeePercentage(1100); // Should fail as it's above 10%
+    }
+
+    function testSetRoyaltyPercentage() public {
+        auction.setRoyaltyPercentage(600); // Setting to 6%
+        assertEq(auction.royaltyPercentage(), 600);
+    }
+
+    function testFailSetRoyaltyPercentageAboveLimit() public {
+        auction.setRoyaltyPercentage(1100); // Should fail as it's above 10%
+    }
+
+    function testSetRoyaltyRecipient() public {
+        address payable newRecipient = payable(address(0x0987654321098765432109876543210987654321)); // Example address
+        auction.setRoyaltyRecipient(newRecipient);
+        assertEq(auction.royaltyRecipient(), newRecipient);
+    }
 }
