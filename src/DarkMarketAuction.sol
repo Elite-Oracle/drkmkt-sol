@@ -13,10 +13,10 @@ contract DarkMarketAuction is Ownable {
     // Struct definition for an auction
     struct Auction {
         address payable seller;
-        uint256 startPrice;
         uint256 endTime;
         address payable highestBidder;
         uint256 highestBid;
+        uint256 bidderIncentive;
         bool finalized;
     }
 
@@ -41,25 +41,25 @@ contract DarkMarketAuction is Ownable {
         setFeePercentage(_feePercentage);
     }
 
-    // Set the fee percentage
+    // Set the Auction Fee Percentage (0% min to 10% max)
     function setFeePercentage(uint256 _feePercentage) public onlyOwner {
         require(_feePercentage >= 0 && _feePercentage <= 1000, "Fee must be between 0% and 10%");
         feePercentage = _feePercentage;
     }
 
     // Start an auction
-    function startAuction(uint256 tokenId, uint256 startPrice, uint256 duration) external {
+    function startAuction(uint256 tokenId, uint256 initialAmount, uint256 duration) external {
         require(token.ownerOf(tokenId) == msg.sender, "Not the owner");
-        auctions[tokenId] = Auction(payable(msg.sender), startPrice, block.timestamp.add(duration), payable(address(0)), 0, false);
+        auctions[tokenId] = Auction(payable(msg.sender), block.timestamp.add(duration), payable(address(0)), initialAmount, 0, false);
         token.transferFrom(msg.sender, address(this), tokenId);
-        emit AuctionStarted(tokenId, startPrice, block.timestamp.add(duration));
+        emit AuctionStarted(tokenId, initialAmount, block.timestamp.add(duration));
     }
 
-    // Place a bid with an incentive for the previous bidder
-    function bid(uint256 tokenId, uint256 bidderIncentive) external payable {
+    // Place a Bid with an incentive if the Bidder is oubide
+    function bid(uint256 tokenId, uint256 bidAmount, uint256 bidderIncentive) external payable {
         Auction storage auction = auctions[tokenId];
         require(block.timestamp <= auction.endTime, "Auction ended");
-        require(msg.value > auction.highestBid.add(bidderIncentive), "Total bid (including incentive) too low");
+        require(bidAmount > auction.highestBid.add(bidderIncentive), "Total New Bid does not cover the Previous Bid plus Incentive");
 
         // Refund the previous highest bidder with the incentive
         if (auction.highestBidder != address(0)) {
@@ -68,7 +68,7 @@ contract DarkMarketAuction is Ownable {
 
         // Update the auction with the new highest bid
         auction.highestBidder = payable(msg.sender);
-        auction.highestBid = msg.value.sub(bidderIncentive);
+        auction.highestBid = bidAmount;
 
         // Extend the auction if a bid is made in the last 20 minutes
         if (block.timestamp > auction.endTime.sub(20 minutes)) {
@@ -115,7 +115,7 @@ contract DarkMarketAuction is Ownable {
         require(msg.sender == auction.seller, "Only the seller can update");
         require(auction.highestBid == 0, "Auction has bids and cannot be updated");
 
-        auction.startPrice = newStartPrice;
+        auction.highestBid = newStartPrice;
         auction.endTime = auction.endTime.add(additionalDuration);
     }
 
