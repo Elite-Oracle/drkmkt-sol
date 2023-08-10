@@ -15,7 +15,7 @@ contract DarkMarketAuctionTest is Test {
 
     function setUp() public {
         royaltyRecipient = payable(address(0x1234567890123456789012345678901234567890)); // Example address
-        auction = new DarkMarketAuction(500, 500, royaltyRecipient); // 5% fee, 5% royalty, sending 1 ether for potential transfers
+        auction = new DarkMarketAuction();
         token = new MockERC721("MockToken", "MTK");
     }
 
@@ -174,7 +174,7 @@ contract DarkMarketAuctionTest is Test {
     }
 
     function testFailPauseByNonOwner() public {
-    DarkMarketAuction nonOwnerAuction = new DarkMarketAuction(500, 500, royaltyRecipient);
+    DarkMarketAuction nonOwnerAuction = new DarkMarketAuction();
 
     // Use the low-level call method to simulate the function call
     (bool success, ) = address(nonOwnerAuction).call(abi.encodeWithSignature("pause()"));
@@ -185,7 +185,7 @@ contract DarkMarketAuctionTest is Test {
 
 
     function testFailUnpauseByNonOwner() public {
-        DarkMarketAuction nonOwnerAuction = new DarkMarketAuction(500, 500, royaltyRecipient);
+        DarkMarketAuction nonOwnerAuction = new DarkMarketAuction();
         nonOwnerAuction.unpause();
     }
 

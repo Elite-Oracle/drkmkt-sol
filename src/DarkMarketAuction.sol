@@ -41,13 +41,13 @@ event DebugString(string message);
     event AuctionFinalized(uint256 auctionId, address winner, uint256 amount);
     event AuctionCancelled(uint256 auctionId);
 
-    constructor(uint32 _feePercentage, uint32 _royaltyPercentage, address payable _royaltyRecipient) {
-        require(_feePercentage <= 1000, "Fee percentage too high"); // Max 10%
-        require(_royaltyPercentage <= 1000, "Royalty percentage too high"); // Max 10%
-        feePercentage = _feePercentage;
-        royaltyPercentage = _royaltyPercentage;
-        royaltyRecipient = _royaltyRecipient;
-    }
+ //   constructor(uint32 _feePercentage, uint32 _royaltyPercentage, address payable _royaltyRecipient) {
+ //       require(_feePercentage <= 1000, "Fee percentage too high"); // Max 10%
+ //       require(_royaltyPercentage <= 1000, "Royalty percentage too high"); // Max 10%
+ //       feePercentage = _feePercentage;
+ //       royaltyPercentage = _royaltyPercentage;
+ //       royaltyRecipient = _royaltyRecipient;
+ //   }
 
     // Set the Auction Fee Percentage (0% min to 10% max)
     function setFeePercentage(uint32 _feePercentage) public onlyOwner {

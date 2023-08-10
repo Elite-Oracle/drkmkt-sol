@@ -12,8 +12,7 @@ contract DarkMarketAuctionFuzzTest is Test {
     address payable royaltyRecipient;
 
     function setUp() public {
-        royaltyRecipient = payable(address(0x1234567890123456789012345678901234567890)); // Example address
-        auction = new DarkMarketAuction(500, 500, royaltyRecipient);
+        auction = new DarkMarketAuction();
         token = new MockERC721("MockToken", "MTK");
     }
 
