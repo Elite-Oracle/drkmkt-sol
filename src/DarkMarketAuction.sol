@@ -34,6 +34,7 @@ contract DarkMarketAuction is Ownable, Pausable {
 // Add these events at the top of your DarkMarketAuction contract
 event DebugUint(string message, uint256 value);
 event DebugAddress(string message, address addr);
+event DebugString(string message);
 
     event AuctionStarted(uint256 auctionId, uint256 startPrice, uint32 endTime);
     event BidPlaced(uint256 auctionId, address bidder, uint256 amount);
@@ -129,29 +130,50 @@ event DebugAddress(string message, address addr);
         auction.isOpen = true;
     }
 
-    // Bid function to allow users to bid on an open auction
-    function bid(uint256 auctionId, uint256 bidAmount, uint256 bidderIncentive) external payable whenNotPaused {
-        Auction storage auction = auctions[auctionId];
-        //debug 
-        emit DebugUint("Bid Amount Received:", msg.value);
-        emit DebugUint("Expected Bid Amount:", bidAmount + bidderIncentive);
-        // debug
-        require(auction.isOpen, "Auction is not open yet");
-        require(msg.value == bidAmount, "ETH sent does not match Bid");
-        require(bidAmount > auction.highestBid + auction.bidderIncentive, "Total bid (including incentive) too low");
+// Bid function to allow users to bid on an open auction
+function bid(uint256 auctionId, uint256 bidAmount, uint256 bidderIncentive) external payable whenNotPaused {
+    Auction storage auction = auctions[auctionId];
+    
+    // Debugging information
+    emit DebugUint("Bid Amount Received:", msg.value);
+    emit DebugUint("Expected Bid Amount:", bidAmount);
+    emit DebugUint("Previous Highest Bid:", auction.highestBid);
+    emit DebugUint("Previous Bidder Incentive:", auction.bidderIncentive);
+    
+    require(auction.isOpen, "Auction is not open yet");
+    require(msg.value == bidAmount, "ETH sent does not match Bid");
+    
+    // Ensure the new bid amount is strictly greater than the sum of the previous highest bid and the bidder incentive
+    uint256 totalPreviousBid = auction.highestBid + auction.bidderIncentive;
+    require(bidAmount > totalPreviousBid, "Total bid (including incentive) too low");
 
-        // Refund the previous highest bidder with their bid and incentive
-        if (auction.highestBidder != address(0)) {
-            auction.highestBidder.transfer(auction.highestBid + auction.bidderIncentive);
-        }
+    // Debugging information for endTime extension
+    emit DebugUint("Current Timestamp:", block.timestamp);
+    emit DebugUint("Auction End Time Before Check:", auction.endTime);
 
-        // Update auction details
-        auction.highestBidder = payable(msg.sender);
-        auction.highestBid = bidAmount;
-        auction.bidderIncentive = bidderIncentive;
-
-        emit BidPlaced(auctionId, msg.sender, bidAmount);
+    // Check if the bid is made within the last 20 minutes of the auction
+    if (block.timestamp < auction.endTime && block.timestamp > auction.endTime - 20 minutes) {
+        auction.endTime += 20 minutes; // Extend the auction by 20 minutes
+        emit DebugUint("Auction End Time Extended To:", auction.endTime);
+    } else {
+        emit DebugString("Auction End Time Not Extended");
     }
+
+    // Refund the previous highest bidder with their bid and incentive
+    if (auction.highestBidder != address(0)) {
+        require(auction.highestBid + auction.bidderIncentive > auction.highestBid, "Potential overflow in refund");
+        auction.highestBidder.transfer(auction.highestBid + auction.bidderIncentive);
+    }
+
+    // Update auction details
+    auction.highestBidder = payable(msg.sender);
+    auction.highestBid = bidAmount;
+    auction.bidderIncentive = bidderIncentive;
+
+    emit BidPlaced(auctionId, msg.sender, bidAmount);
+}
+
+
 
     // Allow the seller to cancel the auction if no bids have been placed
     function cancelAuction(uint256 auctionId) public {
@@ -183,36 +205,51 @@ function _removeAuctionId(uint256 auctionId) internal {
 }
 
     // Finalize the auction, transferring the tokens to the highest bidder and funds to the seller
-        function finalizeAuction(uint256 auctionId) external whenNotPaused {
-        Auction storage auction = auctions[auctionId];
-        require(block.timestamp > auction.endTime, "Auction not yet ended");
-        require(!auction.finalized, "Auction already completed and finalized");
+function finalizeAuction(uint256 auctionId) external whenNotPaused {
+    Auction storage auction = auctions[auctionId];
 
-        if (auction.highestBid == 0) {
-            // If no bids were received, cancel the auction
-            cancelAuction(auctionId);
-            return;
-        }
+    emit DebugString("Entering finalizeAuction");
+    emit DebugUint("Auction ID:", auctionId);
+    emit DebugUint("Current block timestamp:", block.timestamp);
+    emit DebugUint("Auction end time:", auction.endTime);
 
-        auction.finalized = true;
+    require(auction.isOpen, "Auction is not open yet");
+    require(block.timestamp >= auction.endTime, "Auction not yet ended");
+    require(!auction.finalized, "Auction already completed and finalized");
 
-        uint256 fee = auction.highestBid * feePercentage / 10000;
-        uint256 royalty = auction.highestBid * royaltyPercentage / 10000;
-        uint256 sellerAmount = auction.highestBid - fee - royalty;
-
-        payable(owner()).transfer(fee);
-        royaltyRecipient.transfer(royalty);
-        auction.seller.transfer(sellerAmount);
-
-        // Transfer all tokens to the highest bidder
-        for (uint i = 0; i < auction.tokenAddresses.length; i++) {
-            ERC721(auction.tokenAddresses[i]).transferFrom(address(this), auction.highestBidder, auction.tokenIds[i]);
-        }
-
-        _removeAuctionId(auctionId);
-        
-        emit AuctionFinalized(auctionId, auction.highestBidder, auction.highestBid);
+    if (auction.highestBid == 0) {
+        emit DebugString("No bids received. Cancelling auction.");
+        // If no bids were received, cancel the auction
+        cancelAuction(auctionId);
+        return;
     }
+
+    auction.finalized = true;
+
+    uint256 fee = auction.highestBid * feePercentage / 10000;
+    uint256 royalty = auction.highestBid * royaltyPercentage / 10000;
+    uint256 sellerAmount = auction.highestBid - fee - royalty;
+
+    emit DebugUint("Calculated fee:", fee);
+    emit DebugUint("Calculated royalty:", royalty);
+    emit DebugUint("Calculated sellerAmount:", sellerAmount);
+
+    payable(owner()).transfer(fee);
+    royaltyRecipient.transfer(royalty);
+    auction.seller.transfer(sellerAmount);
+
+    emit DebugString("Transferred ETH amounts");
+
+    // Transfer all tokens to the highest bidder
+    for (uint i = 0; i < auction.tokenAddresses.length; i++) {
+        emit DebugAddress("Transferring token from contract to highest bidder. Token address:", auction.tokenAddresses[i]);
+        ERC721(auction.tokenAddresses[i]).transferFrom(address(this), auction.highestBidder, auction.tokenIds[i]);
+    }
+
+    _removeAuctionId(auctionId);
+    
+    emit AuctionFinalized(auctionId, auction.highestBidder, auction.highestBid);
+}
     
     // FAILSAFE (Owner Only): Cancel a specific auction by the contract owner and return all tokens to the bidder / seller
     function cancelSpecificAuction(uint256 auctionId) external onlyOwner {
@@ -265,5 +302,9 @@ function _removeAuctionId(uint256 auctionId) internal {
     function unpause() external onlyOwner {
     _unpause();
     }
+
+    function getActiveAuctionCount() external view returns (uint256) {
+    return activeAuctionIds.length;
+}
 
 }
