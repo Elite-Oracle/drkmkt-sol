@@ -3,4 +3,7 @@ src = "src"
 out = "out"
 libs = ["lib"]
 
+[fuzz]
+runs = 1000  # Number of scenarios the fuzzer will test
+timeout = 60 # Maximum time (in seconds) the fuzzer will run
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config
