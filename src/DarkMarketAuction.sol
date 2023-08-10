@@ -5,8 +5,9 @@ pragma solidity ^0.8.20;
 
 import "../node_modules/@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "../node_modules/@openzeppelin/contracts/access/Ownable.sol";
+import "../node_modules/@openzeppelin/contracts/security/Pausable.sol";
 
-contract DarkMarketAuction is Ownable {
+contract DarkMarketAuction is Ownable, Pausable {
     // Auction Struct
     struct Auction {
         address payable seller;        // Address of the seller
@@ -22,6 +23,7 @@ contract DarkMarketAuction is Ownable {
         uint256[] tokenIds;            // Array of token IDs
     }
 
+    uint256[] public activeAuctionIds; // Total Active Auctions
     uint256 public nextAuctionId = 1; // New state variable for incremental auction IDs
     uint32 public feePercentage;       // Fee percentage for the platform
     uint32 public royaltyPercentage;   // Royalty percentage for the creator
@@ -65,7 +67,8 @@ event DebugAddress(string message, address addr);
 
     // Start An Auction
     // Multiple ERC721 Tokens can be auctioned
-    function startAuction(uint256 initialAmount, uint32 duration, address[] memory _tokenAddresses, uint256[] memory _tokenIds) external {
+    function startAuction(uint256 initialAmount, uint32 duration, address[] memory _tokenAddresses, uint256[] memory _tokenIds) external whenNotPaused {
+        require(duration > 0, "Auction Duration should be greater than zero");
         require(_tokenAddresses.length == _tokenIds.length, "Mismatched token addresses and IDs");
 
         // Transfer all tokens to the contract
@@ -90,11 +93,12 @@ event DebugAddress(string message, address addr);
 
         emit AuctionStarted(nextAuctionId, initialAmount, uint32(block.timestamp) + duration);
         nextAuctionId++; // Increment the Auction ID for the next auction
+        activeAuctionIds.push(nextAuctionId); // Active auctions ++
     }
 
     // Pre-bid function to allow users to bid before the auction officially opens
     // This fuctionality deters Bots from listening for new auctions and front-running actual bidders
-    function preBid(uint256 auctionId, uint256 bidAmount, uint256 bidderIncentive) external payable {
+    function preBid(uint256 auctionId, uint256 bidAmount, uint256 bidderIncentive) external payable whenNotPaused {
         Auction storage auction = auctions[auctionId];
         require(!auction.isOpen, "Auction is already open for bidding");
         require(msg.value == bidAmount, "ETH sent does not match the bid");
@@ -114,7 +118,7 @@ event DebugAddress(string message, address addr);
     }
 
     // Open the auction for public bidding
-    function openAuction(uint256 auctionId) external {
+    function openAuction(uint256 auctionId) external whenNotPaused {
         //DebugAddressemit DebugUint("Current Timestamp:", block.timestamp);
     emit DebugUint("Auction End Time:", auctions[auctionId].endTime);
 
@@ -126,7 +130,7 @@ event DebugAddress(string message, address addr);
     }
 
     // Bid function to allow users to bid on an open auction
-    function bid(uint256 auctionId, uint256 bidAmount, uint256 bidderIncentive) external payable {
+    function bid(uint256 auctionId, uint256 bidAmount, uint256 bidderIncentive) external payable whenNotPaused {
         Auction storage auction = auctions[auctionId];
         //debug 
         emit DebugUint("Bid Amount Received:", msg.value);
@@ -163,11 +167,23 @@ event DebugAddress(string message, address addr);
 
         delete auctions[auctionId];
 
+        _removeAuctionId(auctionId);
+
         emit AuctionCancelled(auctionId);
     }
 
+function _removeAuctionId(uint256 auctionId) internal {
+    for (uint i = 0; i < activeAuctionIds.length; i++) {
+        if (activeAuctionIds[i] == auctionId) {
+            activeAuctionIds[i] = activeAuctionIds[activeAuctionIds.length - 1];
+            activeAuctionIds.pop();
+            break;
+        }
+    }
+}
+
     // Finalize the auction, transferring the tokens to the highest bidder and funds to the seller
-        function finalizeAuction(uint256 auctionId) external {
+        function finalizeAuction(uint256 auctionId) external whenNotPaused {
         Auction storage auction = auctions[auctionId];
         require(block.timestamp > auction.endTime, "Auction not yet ended");
         require(!auction.finalized, "Auction already completed and finalized");
@@ -193,7 +209,61 @@ event DebugAddress(string message, address addr);
             ERC721(auction.tokenAddresses[i]).transferFrom(address(this), auction.highestBidder, auction.tokenIds[i]);
         }
 
+        _removeAuctionId(auctionId);
+        
         emit AuctionFinalized(auctionId, auction.highestBidder, auction.highestBid);
     }
     
+    // FAILSAFE (Owner Only): Cancel a specific auction by the contract owner and return all tokens to the bidder / seller
+    function cancelSpecificAuction(uint256 auctionId) external onlyOwner {
+        Auction storage auction = auctions[auctionId];
+        require(auction.seller != address(0), "Auction does not exist");
+
+        // If there's an outstanding bid, refund the highest bidder
+        if (auction.highestBidder != address(0)) {
+            auction.highestBidder.transfer(auction.highestBid);
+        }
+
+        // Transfer all tokens back to the seller
+        for (uint i = 0; i < auction.tokenAddresses.length; i++) {
+            ERC721(auction.tokenAddresses[i]).transferFrom(address(this), auction.seller, auction.tokenIds[i]);
+        }
+
+        delete auctions[auctionId];
+        _removeAuctionId(auctionId);
+        emit AuctionCancelled(auctionId);
+    }
+
+    // FAILSAFE (Owner Only): Cancel ALL AUCTIONS and return all tokens to the bidders / sellers
+    function cancelAllAuctions() external onlyOwner {
+    for (uint i = 0; i < activeAuctionIds.length; i++) {
+        uint256 auctionId = activeAuctionIds[i];
+        Auction storage auction = auctions[auctionId];
+        
+        // If there's an outstanding bid, refund the highest bidder
+        if (auction.highestBidder != address(0)) {
+            auction.highestBidder.transfer(auction.highestBid);
+        }
+
+        // Transfer all tokens back to the seller
+        for (uint j = 0; j < auction.tokenAddresses.length; j++) {
+            ERC721(auction.tokenAddresses[j]).transferFrom(address(this), auction.seller, auction.tokenIds[j]);
+        }
+
+        delete auctions[auctionId];
+        emit AuctionCancelled(auctionId);
+        }
+    delete activeAuctionIds; // Clear the array
+    }
+
+    // Owner can PAUSE contract if an iregularity is identified - Openzepplin Fuction 
+    function pause() external onlyOwner {
+    _pause();
+    }
+
+    // Owner can UNPAUSE contract when paused - Openzepplin Fuction
+    function unpause() external onlyOwner {
+    _unpause();
+    }
+
 }
