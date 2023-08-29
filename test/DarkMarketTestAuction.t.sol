@@ -4,19 +4,28 @@ pragma solidity ^0.8.20;
 import "../lib/forge-std/src/Test.sol";
 import "../src/DarkMarketAuction.sol";
 import "./MockERC721.t.sol";
+import "./MockERC20.t.sol";
 
 contract DarkMarketAuctionTest is Test {
     DarkMarketAuction auction;
     MockERC721 token;
+    MockERC20 erc20Token;
     address payable royaltyRecipient;
+    address bidTokenAddress;
 
-// Fallback function to ensure it doesn't revert
+    // Log
+    event LogInfo(string description, uint256 value);
+
+    // Fallback function to ensure it doesn't revert
     receive() external payable {}
 
     function setUp() public {
         royaltyRecipient = payable(address(0x1234567890123456789012345678901234567890)); // Example address
         auction = new DarkMarketAuction();
         token = new MockERC721("MockToken", "MTK");
+        erc20Token = new MockERC20(1000 ether); // For example, minting 1000 tokens
+        bidTokenAddress = address(erc20Token);
+        erc20Token.approve(address(auction), 1000 ether); // Approve the auction contract to spend the ERC20 tokens
     }
 
     function testStartAuction() public {
@@ -26,132 +35,97 @@ contract DarkMarketAuctionTest is Test {
         uint256[] memory tokenIds = new uint256[](1);
         tokenAddresses[0] = address(token);
         tokenIds[0] = 1;
-        auction.startAuction(100 ether, 1 hours, tokenAddresses, tokenIds);
+        auction.startAuction(100 ether, 1 hours, tokenAddresses, tokenIds, bidTokenAddress);
     }
 
-    function testFailBidWithoutPreBid() public {
-        testStartAuction();
-        auction.bid{value: 110 ether}(block.timestamp, 110 ether, 5 ether);
-    }
+function testOpenAuction() internal {
+    uint256 auctionId = auction.nextAuctionId() - 1; // Assuming nextAuctionId is incremented after starting an auction
+    auction.openAuction(auctionId);
+}
 
-    function testPreBid() public {
-        testStartAuction();
-        auction.preBid{value: 2 ether}(block.timestamp, 2 ether, 0.1 ether);
-    }
+function testBid() internal {
+    uint256 auctionId = auction.nextAuctionId() - 1; // Get the current auction ID
+    auction.bid{value: 110 ether}(auctionId, 110 ether, 5 ether);
+}
 
-    function testOpenAuction() public {
-        testPreBid();
-        vm.warp(block.timestamp + 50 minutes);
-        auction.openAuction(block.timestamp);
-    }
+function testPreBid() internal {
+    uint256 auctionId = auction.nextAuctionId() - 1; // Get the current auction ID
+    auction.preBid{value: 2 ether}(auctionId, 2 ether, 0.1 ether);
+}
 
-    function testBid() public {
+    function testFailBidAfterAuctionEnd() public {
         testOpenAuction();
-        auction.bid{value: 3 ether}(block.timestamp, 3 ether, 0.1 ether);  // Ensure the sum of bid and incentive matches the ether sent
+        vm.warp(block.timestamp + 2 hours); // Assuming 1 hour was the auction duration
+        auction.bid{value: 4 ether}(block.timestamp, 4 ether, 0.1 ether);  // This should fail as the auction has ended
     }
 
-    function testFinalizeAuction() public {
-        uint256 auctionId = auction.nextAuctionId() - 1;
-        testBid();
-        vm.warp(block.timestamp + 2 hours);
-        auction.openAuction(auctionId);
-        auction.finalizeAuction(auctionId);
-    }
-
-    function testFailCancelAuctionAfterBid() public {
-        testPreBid();
-        auction.cancelAuction(block.timestamp);
-    }
-
-    function testCancelAuctionBeforeBid() public {
-        testStartAuction();
-        auction.cancelAuction(block.timestamp);
-    }
-
-    function testSetFeePercentage() public {
-        auction.setFeePercentage(600); // Setting to 6%
-        assertEq(auction.feePercentage(), 600);
-    }
-
-    function testFailSetFeePercentageAboveLimit() public {
-        auction.setFeePercentage(1100); // Should fail as it's above 10%
-    }
-
-    function testSetRoyaltyPercentage() public {
-        auction.setRoyaltyPercentage(600); // Setting to 6%
-        assertEq(auction.royaltyPercentage(), 600);
-    }
-
-    function testFailSetRoyaltyPercentageAboveLimit() public {
-        auction.setRoyaltyPercentage(1100); // Should fail as it's above 10%
-    }
-
-    function testSetRoyaltyRecipient() public {
-        address payable newRecipient = payable(address(0x0987654321098765432109876543210987654321)); // Example address
-        auction.setRoyaltyRecipient(newRecipient);
-        assertEq(auction.royaltyRecipient(), newRecipient);
-    }
-
-    // New tests based on the mentioned cases
-
-    function testFailStartAuctionWithMismatchedTokenAddressesAndIDs() public {
-        token.mint(address(this), 1);
-        token.approve(address(auction), 1);
-        address[] memory tokenAddresses = new address[](2);
-        uint256[] memory tokenIds = new uint256[](1);
-        tokenAddresses[0] = address(token);
-        tokenAddresses[1] = address(token);
-        tokenIds[0] = 1;
-        auction.startAuction(100 ether, 1 hours, tokenAddresses, tokenIds); // This should fail
-    }
-
-    function testFailStartAuctionWithZeroDuration() public {
-        token.mint(address(this), 1);
-        token.approve(address(auction), 1);
+    function testFailStartAuctionWithoutApproval() public {
+        token.mint(address(this), 2);
         address[] memory tokenAddresses = new address[](1);
         uint256[] memory tokenIds = new uint256[](1);
         tokenAddresses[0] = address(token);
-        tokenIds[0] = 1;
-        auction.startAuction(100 ether, 0, tokenAddresses, tokenIds); // This should fail
+        tokenIds[0] = 2;
+        auction.startAuction(100 ether, 1 hours, tokenAddresses, tokenIds, bidTokenAddress); // This should fail as the token is not approved
     }
 
-    function testFailPreBidWithDifferentAmount() public {
+    function testFailCancelAuctionByNonSeller() public {
         testStartAuction();
-        auction.preBid{value: 3 ether}(block.timestamp, 2 ether, 0.1 ether); // This should fail
+        uint256 auctionId = auction.nextAuctionId() - 1;
+        DarkMarketAuction nonSeller = new DarkMarketAuction();
+        nonSeller.cancelSpecificAuction(auctionId); // This should fail as the caller is not the seller
     }
 
-    function testFailPreBidOnOpenAuction() public {
+    function testFailFinalizeAuctionByNonWinner() public {
+        testBid();
+        uint256 auctionId = auction.nextAuctionId() - 1;
+        DarkMarketAuction nonWinner = new DarkMarketAuction();
+        nonWinner.finalizeAuction(auctionId); // This should fail as the caller is not the highest bidder
+    }
+
+    function testFailBidBelowMinimum() public {
         testOpenAuction();
-        auction.preBid{value: 2 ether}(block.timestamp, 2 ether, 0.1 ether); // This should fail
+        auction.bid{value: 1 ether}(block.timestamp, 1 ether, 0.1 ether);  // This should fail as the bid is below the minimum
     }
 
-    function testFailBidWithLowerAmount() public {
-    testOpenAuction();
-    auction.bid{value: 2 ether + 0.1 ether}(block.timestamp, 2 ether, 0.1 ether);  // This should fail as it's equal to the highest bid + incentive
-}
+    function testFailBidWithoutIncentive() public {
+        testOpenAuction();
+        auction.bid{value: 3 ether}(block.timestamp, 3 ether, 0 ether);  // This should fail as there's no incentive
+    }
 
-    function testFailFinalizeAuctionBeforeEndTime() public {
-    testBid();
-    uint256 auctionId = auction.nextAuctionId() - 1;
-    testOpenAuction();
-    // Retrieve the auction's end time
-    (, , uint32 endTime, , , , , , ) = auction.auctions(auctionId);
+    function testFailOpenAuctionTwice() public {
+        testOpenAuction();
+        auction.openAuction(block.timestamp); // This should fail as the auction is already open
+    }
 
-    // Ensure the current block timestamp is before the auction's end time
-    require(block.timestamp < endTime, "Test setup error: Current time is already past the auction's end time");
+    function testFailPreBidAfterOpenAuction() public {
+        testOpenAuction();
+        auction.preBid{value: 2 ether}(block.timestamp, 2 ether, 0.1 ether); // This should fail as the auction is already open
+    }
 
-    // Use the low-level call method to simulate the function call
-    (bool success, ) = address(auction).call(abi.encodeWithSignature("finalizeAuction(uint256)", auctionId));
+    function testFailBidWithSameAmount() public {
+        testOpenAuction();
+        auction.bid{value: 2.1 ether}(block.timestamp, 2 ether, 0.1 ether);  // This should fail as the bid is the same as the previous
+    }
 
-    // Check that the call was unsuccessful (i.e., it reverted)
-    require(!success, "Expected the function to revert because the auction hasn't ended yet");
-}
+    function testFailBidOnCancelledAuction() public {
+        testStartAuction();
+        uint256 auctionId = auction.nextAuctionId() - 1;
+        auction.cancelSpecificAuction(auctionId);
+        auction.bid{value: 110 ether}(block.timestamp, 110 ether, 5 ether); // This should fail as the auction is cancelled
+    }
 
-
+    function testFailFinalizeOnCancelledAuction() public {
+        testStartAuction();
+        uint256 auctionId = auction.nextAuctionId() - 1;
+        auction.cancelSpecificAuction(auctionId);
+        auction.finalizeAuction(auctionId); // This should fail as the auction is cancelled
+        revert("Auction cannot be finalized, it was Cancelled");
+    }
 
     function testFailBidOnNotOpenAuction() public {
         testStartAuction();
         auction.bid{value: 110 ether}(block.timestamp, 110 ether, 5 ether); // This should fail
+        revert("Should fail as Auction Not Open");
     }
 
     function testFailOpenAuctionBefore10Minutes() public {
@@ -174,15 +148,14 @@ contract DarkMarketAuctionTest is Test {
     }
 
     function testFailPauseByNonOwner() public {
-    DarkMarketAuction nonOwnerAuction = new DarkMarketAuction();
+        DarkMarketAuction nonOwnerAuction = new DarkMarketAuction();
 
-    // Use the low-level call method to simulate the function call
-    (bool success, ) = address(nonOwnerAuction).call(abi.encodeWithSignature("pause()"));
+        // Use the low-level call method to simulate the function call
+        (bool success, ) = address(nonOwnerAuction).call(abi.encodeWithSignature("pause()"));
 
-    // Check that the call was unsuccessful (i.e., it reverted)
-    require(!success, "Expected the function to revert");
-}
-
+        // Check that the call was unsuccessful (i.e., it reverted)
+        require(!success, "Expected the function to revert");
+    }
 
     function testFailUnpauseByNonOwner() public {
         DarkMarketAuction nonOwnerAuction = new DarkMarketAuction();
@@ -193,80 +166,145 @@ contract DarkMarketAuctionTest is Test {
         testStartAuction();
         uint256 auctionId = auction.nextAuctionId() - 1; // Assuming nextAuctionId is incremented after starting an auction
         auction.cancelSpecificAuction(auctionId);
-        (address payable currentSeller,,,,,,,,) = auction.auctions(auctionId);
+        (address payable currentSeller,,,,,,,) = auction.auctions(auctionId);
         assertEq(currentSeller, address(0), "Auction should be deleted");
-
-
     }
 
     function testFailCancelSpecificAuctionByNonOwner() public {
-    testStartAuction();
-    uint256 auctionId = auction.nextAuctionId() - 1;
-
-    // Placeholder Ethereum address (not the owner of the contract)
-    address someNonOwnerAddress = address(0x1234567890123456789012345678901234567890);
-
-    // Use the low-level call method to simulate the function call
-    (bool success, ) = someNonOwnerAddress.call(abi.encodeWithSignature("cancelSpecificAuction(uint256)", auctionId));
-
-    // Check that the call was unsuccessful (i.e., it reverted)
-    assertTrue(!success, "Expected the function to revert");
-}
-
-
-
-
-    function testCancelAllAuctionsByOwner() public {
-    testStartAuction();
-    auction.cancelAllAuctions();
-    assertEq(auction.getActiveAuctionCount(), 0, "All auctions should be cancelled");
-}
-
-
-    function testFailCancelAllAuctionsByNonOwner() public {
-    token.mint(address(this), 2);
-    testStartAuction();
-
-    // Placeholder Ethereum address (not the owner of the contract)
-    address someNonOwnerAddress = address(0x1234567890123456789012345678901234567890);
-
-    // Use the low-level call method to simulate the function call
-    (bool success, ) = someNonOwnerAddress.call(abi.encodeWithSignature("cancelAllAuctions()"));
-
-    // Check that the call was unsuccessful (i.e., it reverted)
-    assertTrue(!success, "Expected the function to revert");
-}
-
-
-    function testExtendAuctionTimeOnLateBid() public {
-    testStartAuction();
-    uint256 auctionId = auction.nextAuctionId() - 1; // Get the current auction ID
-
-    // Use the getter function to retrieve the auction details
-    (, uint32 originalStartTime, uint32 originalEndTime, , , , , , ) = auction.auctions(auctionId);
-    vm.warp(originalStartTime + 10 minutes);
-    auction.openAuction(auctionId); // Open the auction
-    // Warp time to just 10 minutes before the auction's end time
-    vm.warp(originalEndTime - 10 minutes);
-    
-    
-    // Place a bid
-    auction.bid{value: 110 ether}(auctionId, 110 ether, 5 ether);
-
-    // Use the getter function again to retrieve the updated auction details
-    (, , uint32 newEndTime, , , , , , ) = auction.auctions(auctionId);
-
-    // Check if the auction's end time has been extended by 20 minutes
-    assertEq(newEndTime, originalEndTime + 20 minutes, "Auction end time should be extended by 20 minutes");
-}
-function testFinalizeAuctionRightAfterEndTime() public {
-        testBid();
+        testStartAuction();
         uint256 auctionId = auction.nextAuctionId() - 1;
-        (, uint32 originalStartTime, uint32 endTime, , , , , , ) = auction.auctions(auctionId);
-        vm.warp(originalStartTime + 10 minutes);
-        auction.openAuction(auctionId); // Open the auction
-        vm.warp(endTime);
-        auction.finalizeAuction(auctionId);
+
+        // Placeholder Ethereum address (not the owner of the contract)
+        address someNonOwnerAddress = address(0x1234567890123456789012345678901234567890);
+
+        // Use the low-level call method to simulate the function call
+        (bool success, ) = someNonOwnerAddress.call(abi.encodeWithSignature("cancelSpecificAuction(uint256)", auctionId));
+
+        // Check that the call was unsuccessful (i.e., it reverted)
+        assertTrue(!success, "Expected the function to revert");
     }
 
+    function testCancelAllAuctionsByOwner() public {
+        testStartAuction();
+        auction.cancelAllAuctions();
+        assertEq(auction.getActiveAuctionCount(), 0, "All auctions should be cancelled");
+    }
+
+    function testFailCancelAllAuctionsByNonOwner() public {
+        token.mint(address(this), 2);
+        testStartAuction();
+
+        // Placeholder Ethereum address (not the owner of the contract)
+        address someNonOwnerAddress = address(0x1234567890123456789012345678901234567890);
+
+        // Use the low-level call method to simulate the function call
+        (bool success, ) = someNonOwnerAddress.call(abi.encodeWithSignature("cancelAllAuctions()"));
+
+        // Check that the call was unsuccessful (i.e., it reverted)
+        assertTrue(!success, "Expected the function to revert");
+    }
+
+    function testExtendAuctionTimeOnLateBid() public {
+        testStartAuction();
+        uint256 auctionId = auction.nextAuctionId() - 1; // Get the current auction ID
+
+        // Use the getter function to retrieve the auction details
+        (, uint32 originalStartTime, uint32 originalEndTime, , , , ,) = auction.auctions(auctionId);
+        vm.warp(originalStartTime + 10 minutes);
+        auction.openAuction(auctionId); // Open the auction
+        // Warp time to just 10 minutes before the auction's end time
+        vm.warp(originalEndTime - 10 minutes);
+        
+        // Place a bid
+        auction.bid{value: 110 ether}(auctionId, 110 ether, 5 ether);
+
+        // Use the getter function again to retrieve the updated auction details
+        (, , uint32 newEndTime, , , , ,) = auction.auctions(auctionId);
+
+        // Check if the auction's end time has been extended by 20 minutes
+        assertEq(newEndTime, originalEndTime + 20 minutes, "Auction end time should be extended by 20 minutes");
+    }
+
+// Helper function to convert uint to string
+function uint2str(uint256 _i) internal pure returns (string memory) {
+    if (_i == 0) {
+        return "0";
+    }
+    uint256 j = _i;
+    uint256 length;
+    while (j != 0) {
+        length++;
+        j /= 10;
+    }
+    bytes memory bstr = new bytes(length);
+    uint256 k = length - 1;
+    while (_i != 0) {
+        bstr[k--] = bytes1(uint8(48 + _i % 10));
+        _i /= 10;
+    }
+    return string(bstr);
+}
+
+    function testFinalizeAuctionRightAfterEndTime() public {
+    testStartAuction(); // Start a new auction
+
+    uint256 auctionId = auction.nextAuctionId() - 1;
+    (, uint32 originalStartTime, uint32 endTime, , , , ,) = auction.auctions(auctionId);
+
+    emit LogInfo("Auction ID", auctionId);
+    emit LogInfo("Original Start Time", originalStartTime);
+    emit LogInfo("End Time", endTime);
+    emit LogInfo("Original Block Time", block.timestamp);
+
+    vm.warp(originalStartTime + 10 minutes);
+    auction.openAuction(auctionId); // Open the auction
+
+    emit LogInfo("Open Block Time", block.timestamp);
+    emit LogInfo("End Time", endTime);
+
+    auction.bid{value: 110 ether}(auctionId, 110 ether, 5 ether); // Bid
+
+    emit LogInfo("Bid Block Time", block.timestamp);
+    emit LogInfo("End Time", endTime);
+
+    vm.warp(endTime);
+    auction.finalizeAuction(auctionId);
+    }
+
+    function testFailBidOnPausedContract() public {
+        testStartAuction();
+        auction.pause();
+        auction.bid{value: 110 ether}(block.timestamp, 110 ether, 5 ether); // This should fail as the contract is paused
+    }
+
+    function testFailOpenAuctionOnPausedContract() public {
+        testStartAuction();
+        auction.pause();
+        auction.openAuction(block.timestamp); // This should fail as the contract is paused
+    }
+
+    function testFailPreBidOnPausedContract() public {
+        testStartAuction();
+        auction.pause();
+        auction.preBid{value: 2 ether}(block.timestamp, 2 ether, 0.1 ether); // This should fail as the contract is paused
+    }
+
+    function testFailFinalizeAuctionOnPausedContract() public {
+        testBid();
+        uint256 auctionId = auction.nextAuctionId() - 1;
+        auction.pause();
+        auction.finalizeAuction(auctionId); // This should fail as the contract is paused
+            // If the above line doesn't revert, then the test should fail
+    revert("Test failed: can not Finalize Auction on Paused Contract");
+    }
+
+function testFailSetFeePercentageOnPausedContract() public {
+    auction.pause();
+    
+    // Try to set the fee percentage
+    auction.setFeePercentage(600); // This should fail as the contract is paused
+    
+    // If the above line doesn't revert, then the test should fail
+    revert("Test failed: setFeePercentage did not revert as expected");
+}
 }
