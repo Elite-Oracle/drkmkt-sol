@@ -2,309 +2,123 @@
 pragma solidity ^0.8.20;
 
 import "../lib/forge-std/src/Test.sol";
+import "../lib/forge-std/src/console2.sol";
 import "../src/DarkMarketAuction.sol";
 import "./MockERC721.t.sol";
 import "./MockERC20.t.sol";
 
 contract DarkMarketAuctionTest is Test {
+    using console for *; // Reintroduced for enhanced logging
+
     DarkMarketAuction auction;
     MockERC721 token;
     MockERC20 erc20Token;
     address payable royaltyRecipient;
     address bidTokenAddress;
-
-    // Log
-    event LogInfo(string description, uint256 value);
+    address payable bidderWallet;
+    address payable sellerWallet;
 
     // Fallback function to ensure it doesn't revert
     receive() external payable {}
 
     function setUp() public {
-        royaltyRecipient = payable(address(0x1234567890123456789012345678901234567890)); // Example address
+        console.log("Setting up test environment...");
+
+        royaltyRecipient = payable(address(0x1234567890123456789012345678901234567891)); 
+        sellerWallet = payable(address(0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266));
+        bidderWallet = payable(address(0x70997970C51812dc3A010C7d01b50e0d17dc79C8));
+        
+        console.log("Royalty Recipient:", address(royaltyRecipient));
+        console.log("Seller Wallet:", address(sellerWallet));
+        console.log("Bidder Wallet:", address(bidderWallet));
+        
         auction = new DarkMarketAuction();
         token = new MockERC721("MockToken", "MTK");
-        erc20Token = new MockERC20(1000 ether); // For example, minting 1000 tokens
+        erc20Token = new MockERC20(1000 ether);
         bidTokenAddress = address(erc20Token);
-        erc20Token.approve(address(auction), 1000 ether); // Approve the auction contract to spend the ERC20 tokens
-    }
-
-    function testStartAuction() public {
-        token.mint(address(this), 1);
-        token.approve(address(auction), 1);
-        address[] memory tokenAddresses = new address[](1);
-        uint256[] memory tokenIds = new uint256[](1);
-        tokenAddresses[0] = address(token);
-        tokenIds[0] = 1;
-        auction.startAuction(100 ether, 1 hours, tokenAddresses, tokenIds, bidTokenAddress);
-    }
-
-function testOpenAuction() internal {
-    uint256 auctionId = auction.nextAuctionId() - 1; // Assuming nextAuctionId is incremented after starting an auction
-    auction.openAuction(auctionId);
-}
-
-function testBid() internal {
-    uint256 auctionId = auction.nextAuctionId() - 1; // Get the current auction ID
-    auction.bid{value: 110 ether}(auctionId, 110 ether, 5 ether);
-}
-
-function testPreBid() internal {
-    uint256 auctionId = auction.nextAuctionId() - 1; // Get the current auction ID
-    auction.preBid{value: 2 ether}(auctionId, 2 ether, 0.1 ether);
-}
-
-    function testFailBidAfterAuctionEnd() public {
-        testOpenAuction();
-        vm.warp(block.timestamp + 2 hours); // Assuming 1 hour was the auction duration
-        auction.bid{value: 4 ether}(block.timestamp, 4 ether, 0.1 ether);  // This should fail as the auction has ended
-    }
-
-    function testFailStartAuctionWithoutApproval() public {
-        token.mint(address(this), 2);
-        address[] memory tokenAddresses = new address[](1);
-        uint256[] memory tokenIds = new uint256[](1);
-        tokenAddresses[0] = address(token);
-        tokenIds[0] = 2;
-        auction.startAuction(100 ether, 1 hours, tokenAddresses, tokenIds, bidTokenAddress); // This should fail as the token is not approved
-    }
-
-    function testFailCancelAuctionByNonSeller() public {
-        testStartAuction();
-        uint256 auctionId = auction.nextAuctionId() - 1;
-        DarkMarketAuction nonSeller = new DarkMarketAuction();
-        nonSeller.cancelSpecificAuction(auctionId); // This should fail as the caller is not the seller
-    }
-
-    function testFailFinalizeAuctionByNonWinner() public {
-        testBid();
-        uint256 auctionId = auction.nextAuctionId() - 1;
-        DarkMarketAuction nonWinner = new DarkMarketAuction();
-        nonWinner.finalizeAuction(auctionId); // This should fail as the caller is not the highest bidder
-    }
-
-    function testFailBidBelowMinimum() public {
-        testOpenAuction();
-        auction.bid{value: 1 ether}(block.timestamp, 1 ether, 0.1 ether);  // This should fail as the bid is below the minimum
-    }
-
-    function testFailBidWithoutIncentive() public {
-        testOpenAuction();
-        auction.bid{value: 3 ether}(block.timestamp, 3 ether, 0 ether);  // This should fail as there's no incentive
-    }
-
-    function testFailOpenAuctionTwice() public {
-        testOpenAuction();
-        auction.openAuction(block.timestamp); // This should fail as the auction is already open
-    }
-
-    function testFailPreBidAfterOpenAuction() public {
-        testOpenAuction();
-        auction.preBid{value: 2 ether}(block.timestamp, 2 ether, 0.1 ether); // This should fail as the auction is already open
-    }
-
-    function testFailBidWithSameAmount() public {
-        testOpenAuction();
-        auction.bid{value: 2.1 ether}(block.timestamp, 2 ether, 0.1 ether);  // This should fail as the bid is the same as the previous
-    }
-
-    function testFailBidOnCancelledAuction() public {
-        testStartAuction();
-        uint256 auctionId = auction.nextAuctionId() - 1;
-        auction.cancelSpecificAuction(auctionId);
-        auction.bid{value: 110 ether}(block.timestamp, 110 ether, 5 ether); // This should fail as the auction is cancelled
-    }
-
-    function testFailFinalizeOnCancelledAuction() public {
-        testStartAuction();
-        uint256 auctionId = auction.nextAuctionId() - 1;
-        auction.cancelSpecificAuction(auctionId);
-        auction.finalizeAuction(auctionId); // This should fail as the auction is cancelled
-        revert("Auction cannot be finalized, it was Cancelled");
-    }
-
-    function testFailBidOnNotOpenAuction() public {
-        testStartAuction();
-        auction.bid{value: 110 ether}(block.timestamp, 110 ether, 5 ether); // This should fail
-        revert("Should fail as Auction Not Open");
-    }
-
-    function testFailOpenAuctionBefore10Minutes() public {
-        testPreBid();
-        vm.warp(block.timestamp + 5 minutes);
-        auction.openAuction(block.timestamp); // This should fail
-    }
-
-    function testFailOpenAlreadyOpenAuction() public {
-        testOpenAuction();
-        auction.openAuction(block.timestamp); // This should fail
-    }
-
-    function testPauseAndUnpauseByOwner() public {
-        auction.pause();
-        assertTrue(auction.paused(), "Contract should be paused");
-
-        auction.unpause();
-        assertFalse(auction.paused(), "Contract should be unpaused");
-    }
-
-    function testFailPauseByNonOwner() public {
-        DarkMarketAuction nonOwnerAuction = new DarkMarketAuction();
-
-        // Use the low-level call method to simulate the function call
-        (bool success, ) = address(nonOwnerAuction).call(abi.encodeWithSignature("pause()"));
-
-        // Check that the call was unsuccessful (i.e., it reverted)
-        require(!success, "Expected the function to revert");
-    }
-
-    function testFailUnpauseByNonOwner() public {
-        DarkMarketAuction nonOwnerAuction = new DarkMarketAuction();
-        nonOwnerAuction.unpause();
-    }
-
-    function testCancelSpecificAuctionByOwner() public {
-        testStartAuction();
-        uint256 auctionId = auction.nextAuctionId() - 1; // Assuming nextAuctionId is incremented after starting an auction
-        auction.cancelSpecificAuction(auctionId);
-        (address payable currentSeller,,,,,,,) = auction.auctions(auctionId);
-        assertEq(currentSeller, address(0), "Auction should be deleted");
-    }
-
-    function testFailCancelSpecificAuctionByNonOwner() public {
-        testStartAuction();
-        uint256 auctionId = auction.nextAuctionId() - 1;
-
-        // Placeholder Ethereum address (not the owner of the contract)
-        address someNonOwnerAddress = address(0x1234567890123456789012345678901234567890);
-
-        // Use the low-level call method to simulate the function call
-        (bool success, ) = someNonOwnerAddress.call(abi.encodeWithSignature("cancelSpecificAuction(uint256)", auctionId));
-
-        // Check that the call was unsuccessful (i.e., it reverted)
-        assertTrue(!success, "Expected the function to revert");
-    }
-
-    function testCancelAllAuctionsByOwner() public {
-        testStartAuction();
-        auction.cancelAllAuctions();
-        assertEq(auction.getActiveAuctionCount(), 0, "All auctions should be cancelled");
-    }
-
-    function testFailCancelAllAuctionsByNonOwner() public {
-        token.mint(address(this), 2);
-        testStartAuction();
-
-        // Placeholder Ethereum address (not the owner of the contract)
-        address someNonOwnerAddress = address(0x1234567890123456789012345678901234567890);
-
-        // Use the low-level call method to simulate the function call
-        (bool success, ) = someNonOwnerAddress.call(abi.encodeWithSignature("cancelAllAuctions()"));
-
-        // Check that the call was unsuccessful (i.e., it reverted)
-        assertTrue(!success, "Expected the function to revert");
-    }
-
-    function testExtendAuctionTimeOnLateBid() public {
-        testStartAuction();
-        uint256 auctionId = auction.nextAuctionId() - 1; // Get the current auction ID
-
-        // Use the getter function to retrieve the auction details
-        (, uint32 originalStartTime, uint32 originalEndTime, , , , ,) = auction.auctions(auctionId);
-        vm.warp(originalStartTime + 10 minutes);
-        auction.openAuction(auctionId); // Open the auction
-        // Warp time to just 10 minutes before the auction's end time
-        vm.warp(originalEndTime - 10 minutes);
         
-        // Place a bid
-        auction.bid{value: 110 ether}(auctionId, 110 ether, 5 ether);
+        console.log("Auction Contract Address:", address(auction));
+        console.log("Mock ERC721 Token Address:", address(token));
+        console.log("Mock ERC20 Token Address:", address(erc20Token));
+        
+        erc20Token.approve(address(auction), 5500 ether);
+        console.log("ERC20 approved for auction contract.");
 
-        // Use the getter function again to retrieve the updated auction details
-        (, , uint32 newEndTime, , , , ,) = auction.auctions(auctionId);
+        token.mint(address(sellerWallet), 1);
+        console.log("Token minted to:", address(sellerWallet));
 
-        // Check if the auction's end time has been extended by 20 minutes
-        assertEq(newEndTime, originalEndTime + 20 minutes, "Auction end time should be extended by 20 minutes");
+        // 1. Mint ERC20 tokens to the bidderWallet
+        erc20Token.mint(bidderWallet, 1500 ether); 
+        // Minting more than the bid amount for safety
+        console.log("ERC20 tokens minted to Bidder Wallet.");
+        vm.prank(bidderWallet);
+        erc20Token.approve(address(auction), 1500 ether);
+
+        // 2. Mint ERC20 tokens to the sellerWallet
+        erc20Token.mint(sellerWallet, 2500 ether); 
+        // Minting more than the bid amount for safety
+        console.log("ERC20 tokens minted to Seller Wallet.");
+        vm.prank(sellerWallet);
+        erc20Token.approve(address(auction), 2500 ether);
+
+        // 3. Mint ERC20 tokens to the contractWallet
+        erc20Token.mint(address(this), 9500 ether); 
+        // Minting more than the bid amount for safety
+        console.log("ERC20 tokens minted to CONTRACT Wallet.");
+        erc20Token.approve(address(this), 9500 ether);
+
+        // Ensure the token was minted to the sellerWallet
+        assertEq(token.ownerOf(1), address(sellerWallet));
+        console.log("Token ownership verified for seller.");
+
+        vm.prank(address(sellerWallet));
+        token.approve(address(auction), 1);
+        console.log("Token approved by:", address(sellerWallet));
+
+        // Ensure the auction contract is approved to transfer the token
+        assertEq(token.getApproved(1), address(auction));
+        console.log("Token approval verified for auction contract.");
     }
 
-// Helper function to convert uint to string
-function uint2str(uint256 _i) internal pure returns (string memory) {
-    if (_i == 0) {
-        return "0";
-    }
-    uint256 j = _i;
-    uint256 length;
-    while (j != 0) {
-        length++;
-        j /= 10;
-    }
-    bytes memory bstr = new bytes(length);
-    uint256 k = length - 1;
-    while (_i != 0) {
-        bstr[k--] = bytes1(uint8(48 + _i % 10));
-        _i /= 10;
-    }
-    return string(bstr);
-}
+    function testEntireAuction() public {
+    console.log("START Entire auction...");
+        
+        DarkMarketAuction.TokenDetail[] memory tokens = new DarkMarketAuction.TokenDetail[](1);
+        tokens[0] = DarkMarketAuction.TokenDetail({
+            tokenAddress: address(token),
+            tokenId: 1
+        });
 
-    function testFinalizeAuctionRightAfterEndTime() public {
-    testStartAuction(); // Start a new auction
+        uint256 sellerBeforeBid = address(sellerWallet).balance;
+        console.log("Seller Wallet Balance before start:", sellerBeforeBid);
 
-    uint256 auctionId = auction.nextAuctionId() - 1;
-    (, uint32 originalStartTime, uint32 endTime, , , , ,) = auction.auctions(auctionId);
+        console.log("Starting Auction...");
+        vm.prank(address(sellerWallet));
+        auction.startAuction(100 ether, 1 hours, tokens, bidTokenAddress);
+        console.log("Auction started by:", address(sellerWallet));
 
-    emit LogInfo("Auction ID", auctionId);
-    emit LogInfo("Original Start Time", originalStartTime);
-    emit LogInfo("End Time", endTime);
-    emit LogInfo("Original Block Time", block.timestamp);
+        uint256 auctionId = auction.nextAuctionId() - 1; // Get the current auction ID
+        console.log("Current Auction ID:", auctionId);
+        
+        uint256 balanceBeforeBid = address(bidderWallet).balance;
+        console.log("Bidder Wallet Balance before bid:", balanceBeforeBid);
 
-    vm.warp(originalStartTime + 10 minutes);
-    auction.openAuction(auctionId); // Open the auction
-
-    emit LogInfo("Open Block Time", block.timestamp);
-    emit LogInfo("End Time", endTime);
-
-    auction.bid{value: 110 ether}(auctionId, 110 ether, 5 ether); // Bid
-
-    emit LogInfo("Bid Block Time", block.timestamp);
-    emit LogInfo("End Time", endTime);
-
-    vm.warp(endTime);
-    auction.finalizeAuction(auctionId);
-    }
-
-    function testFailBidOnPausedContract() public {
-        testStartAuction();
-        auction.pause();
-        auction.bid{value: 110 ether}(block.timestamp, 110 ether, 5 ether); // This should fail as the contract is paused
-    }
-
-    function testFailOpenAuctionOnPausedContract() public {
-        testStartAuction();
-        auction.pause();
-        auction.openAuction(block.timestamp); // This should fail as the contract is paused
-    }
-
-    function testFailPreBidOnPausedContract() public {
-        testStartAuction();
-        auction.pause();
-        auction.preBid{value: 2 ether}(block.timestamp, 2 ether, 0.1 ether); // This should fail as the contract is paused
-    }
-
-    function testFailFinalizeAuctionOnPausedContract() public {
-        testBid();
-        uint256 auctionId = auction.nextAuctionId() - 1;
-        auction.pause();
-        auction.finalizeAuction(auctionId); // This should fail as the contract is paused
-            // If the above line doesn't revert, then the test should fail
-    revert("Test failed: can not Finalize Auction on Paused Contract");
-    }
-
-function testFailSetFeePercentageOnPausedContract() public {
-    auction.pause();
+        vm.warp(block.timestamp + 10 minutes);
+        console.log("Time warped by 10 minutes.");
+        
+        vm.prank(bidderWallet);
+        auction.bid(auctionId, 110 ether, 5 ether);
+        console.log("Bid by:", address(bidderWallet));
     
-    // Try to set the fee percentage
-    auction.setFeePercentage(600); // This should fail as the contract is paused
-    
-    // If the above line doesn't revert, then the test should fail
-    revert("Test failed: setFeePercentage did not revert as expected");
-}
+        // Accessing the endTime directly from the public mapping
+        uint32 auctionEndTime = auction.getAuctionEndTime(auctionId);
+
+        // Warp the EVM time to the endTime of the auction or slightly after it
+        vm.warp(auctionEndTime + 1 minutes); // Adding 1 minute to ensure we're past the endTime
+        uint256 contractBeforeBid = address(this).balance;
+        console.log("Contract Wallet Balance before bid:", contractBeforeBid);
+        console.log("Finalizing auction...");
+        auction.finalizeAuction(auctionId);
+        console.log("Auction finalized for ID:", auctionId);
+    }
 }

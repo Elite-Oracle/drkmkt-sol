@@ -26,14 +26,17 @@ contract DarkMarketAuctionFuzzTest is Test {
         vm.assume(tokenIndex < tokens.length); // Ensure valid token index
         vm.assume(duration > 0 && duration <= 1 weeks); // Assuming a max duration of 1 week for auctions
 
-        address[] memory tokenAddresses = new address[](tokenIds.length);
+        DarkMarketAuction.TokenDetail[] memory tokenDetails = new DarkMarketAuction.TokenDetail[](tokenIds.length);
         for (uint i = 0; i < tokenIds.length; i++) {
-            tokenAddresses[i] = address(tokens[tokenIndex]);
+            tokenDetails[i] = DarkMarketAuction.TokenDetail({
+                tokenAddress: address(tokens[tokenIndex]),
+                tokenId: tokenIds[i]
+            });
             tokens[tokenIndex].mint(address(this), tokenIds[i]);
             tokens[tokenIndex].approve(address(auction), tokenIds[i]);
         }
 
-        auction.startAuction(startPrice, duration, tokenAddresses, tokenIds, mockERC20);
+        auction.startAuction(startPrice, duration, tokenDetails, mockERC20);
     }
 
     // ... Add more fuzz tests for other functions ...
