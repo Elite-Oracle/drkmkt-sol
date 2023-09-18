@@ -90,13 +90,13 @@ contract DarkMarketAuction is ERC721Holder, Ownable, Pausable, ReentrancyGuard {
         royaltyRecipient = _royaltyRecipient;
     }
 
-    /**
-     * @dev Starts an auction by transferring the ERC721 tokens into the contract.
-     * @param startPrice The starting price for the auction.
-     * @param duration The duration of the auction in seconds (86,400 = 1 day).
-     * @param _tokens The array of TokenDetail containing the ERC721 contract addresses and token IDs.
-     * @param ERC20forBidding The address of the ERC20 token used for bidding.
-     */
+/**
+ * @dev Starts an auction by transferring the ERC721 tokens into the contract.
+ * @param startPrice The starting price for the auction.
+ * @param duration The duration of the auction in seconds (86,400 = 1 day).
+ * @param _tokens The array of TokenDetail containing the ERC721 contract addresses and token IDs.
+ * @param ERC20forBidding The address of the ERC20 token used for bidding.
+ */
 function startAuction(
     uint256 startPrice,
     uint32 duration,
@@ -105,7 +105,7 @@ function startAuction(
 ) external whenNotPaused {
     require(_tokens.length > 0, "At least one token required");
 
-    // Remind the seller to approve the contract for ERC721 transfers
+    // Ensure the contract is approved to transfer each ERC721 token
     for (uint i = 0; i < _tokens.length; i++) {
         require(
             IERC721(_tokens[i].tokenAddress).getApproved(_tokens[i].tokenId) == address(this) || 
@@ -114,7 +114,7 @@ function startAuction(
         );
     }
 
-    // Transfer all tokens to the contract using safeTransferFrom
+    // Transfer all tokens to the contract
     for (uint i = 0; i < _tokens.length; i++) {
         IERC721(_tokens[i].tokenAddress).safeTransferFrom(msg.sender, address(this), _tokens[i].tokenId);
     }
@@ -128,12 +128,12 @@ function startAuction(
     newAuction.status = AuctionStatus.Open;
     newAuction.bidTokenAddress = ERC20forBidding;
 
-    // Manually copy each token detail from memory to storage
+    // Add tokens to the auction
     for (uint i = 0; i < _tokens.length; i++) {
         newAuction.tokens.push(_tokens[i]);
     }
 
-    emit AuctionStarted(nextAuctionId, 0, 0); // Start price and end time are not set yet
+    emit AuctionStarted(nextAuctionId, startPrice, newAuction.endTime);
     activeAuctionIds.push(nextAuctionId);
     nextAuctionId++;
 }
@@ -243,66 +243,45 @@ function startAuction(
     }
 
     /*
-     * @dev Finalizes the auction and transfers the ERC721 tokens to the highest bidder. Calculates the transfers for Fees, Royalties, and Seller minus the Incentives paid out. 
-     * @param auctionId The ID of the auction.
-     */
+    * @dev Finalizes the auction and transfers the ERC721 tokens to the highest bidder. Calculates the transfers for Fees, Royalties, and Seller minus the Incentives paid out. 
+    * @param auctionId The ID of the auction.
+    */
     function finalizeAuction(uint256 auctionId) external whenNotPaused nonReentrant {
-    // Retrieve the auction details using the provided auctionId.
     Auction storage auction = auctions[auctionId];
-
-    // Ensure the auction is either Open or in Bid status.
     require(auction.status == AuctionStatus.Open || auction.status == AuctionStatus.Bid, "Auction is not open yet");
-
-    // Ensure the current time is beyond the auction's end time.
     require(block.timestamp >= auction.endTime, "Auction has not Ended");
-
-    // Ensure the auction has not already been finalized.
     require(auction.status != AuctionStatus.Finalized, "Auction is already completed and finalized");
 
-    // Create an instance of the ERC20 token used for bidding in this auction.
     IERC20 bidToken = IERC20(auction.bidTokenAddress);
-
-    // Check the contract's balance of the bid token to ensure it has enough funds to finalize the auction.
     uint256 contractBalance = bidToken.balanceOf(address(this));
-    require(contractBalance >= auction.highestBid, "Contract doesn't have enough funds to finalize the auction");
+    require(contractBalance >= auction.highestBid - totalIncentives, "Contract doesn't have enough funds to finalize the auction");
 
-    // If no bids were placed on the auction, cancel it.
     if (auction.highestBid == 0) {
         cancelAuction(auctionId);
         return;
     }
 
-    // Update the auction's status to Finalized.
     auction.status = AuctionStatus.Finalized;
-
-    // Calculate the fee to be taken from the highest bid based on the feePercentage.
     uint256 fee = auction.highestBid * feePercentage / 10000;
-
-    // Calculate the royalty to be taken from the highest bid based on the royaltyPercentage.
     uint256 royalty = auction.highestBid * royaltyPercentage / 10000;
-
-    // Calculate the amount to be transferred to the seller after deducting the fee, royalty, and total incentives.
     uint256 sellerAmount = auction.highestBid - fee - royalty - totalIncentives;
 
-    // Transfer the fee to the contract owner if it's greater than 0.
     if (fee > 0) {
         payable(owner()).transfer(fee);
     }
 
-    // Transfer the royalty to the designated royalty recipient if it's greater than 0.
     if (royalty > 0) {
         royaltyRecipient.transfer(royalty);
     }
 
-    // Transfer the remaining amount to the seller.
     bidToken.transfer(auction.seller, sellerAmount);
 
-    // Transfer the auctioned tokens to the highest bidder.
+    // Transfer all auctioned tokens to the highest bidder
     for (uint i = 0; i < auction.tokens.length; i++) {
         IERC721(auction.tokens[i].tokenAddress).safeTransferFrom(address(this), auction.highestBidder, auction.tokens[i].tokenId);
     }
 
-    // Remove the auctionId from the activeAuctionIds array.
+    // Remove the auctionId from the activeAuctionIds array
     for (uint i = 0; i < activeAuctionIds.length; i++) {
         if (activeAuctionIds[i] == auctionId) {
             activeAuctionIds[i] = activeAuctionIds[activeAuctionIds.length - 1];
@@ -310,8 +289,8 @@ function startAuction(
             break;
         }
     }
-        // Emit an event indicating the auction has been finalized.
-        emit AuctionFinalized(auctionId, auction.highestBidder, auction.highestBid);
+
+    emit AuctionFinalized(auctionId, auction.highestBidder, auction.highestBid);
     }
 
     /**
