@@ -40,10 +40,10 @@ contract DarkMarketAuction is ERC721Holder, Ownable, Pausable, ReentrancyGuard {
     // Represents the status of an auction
     enum AuctionStatus {
         Open,
-        PreBid,
-        Bid,
+        BidReceived,
         ExtraTime,
-        Finalized
+        Finalized,
+        Cancelled
     }
 
     uint256[] public activeAuctionIds;    // Array to store active auction IDs
@@ -136,86 +136,68 @@ function startAuction(
     emit AuctionStarted(nextAuctionId, startPrice, newAuction.endTime);
     activeAuctionIds.push(nextAuctionId);
     nextAuctionId++;
+
+    newAuction.status = AuctionStatus.Open;
 }
 
 
-    /**
-     * @dev Allows pre-bidding before the auction officially opens. This function was created to discourage 'Botting' so that no auction can be front-run in order to generate outbid incentives until after 10 minutes have elapsed.
-     * @param auctionId The ID of the auction.
-     * @param bidAmount The bid amount.
-     * @param bidderIncentive The incentive for the bidder.
-     */
-    function preBid(uint256 auctionId, uint256 bidAmount, uint256 bidderIncentive) external payable whenNotPaused {
-        Auction storage auction = auctions[auctionId];
-        require(auction.status == AuctionStatus.Open, "Auction is already open for bidding");
-        require(IERC20(auction.bidTokenAddress).transferFrom(msg.sender, address(this), bidAmount), "Token transfer failed");
+/**
+ * @dev Function bid - allow users to Bid on Auction
+ * @param auctionId The ID of the auction.
+ * @param bidAmount The bid amount.
+ * @param bidderIncentive The incentive for the bidder.
+ */
+function bid(uint256 auctionId, uint256 bidAmount, uint256 bidderIncentive) external whenNotPaused {
+    Auction storage auction = auctions[auctionId];
+    require(auction.status != AuctionStatus.Finalized, "Auction is Closed");
+    require(block.timestamp <= auction.endTime, "Auction has already Ended");
+    require(IERC20(auction.bidTokenAddress).transferFrom(msg.sender, address(this), bidAmount), "Token transfer failed");
+    // Ensure the incentive is not more than 20% of the bid amount
+    require(bidderIncentive <= bidAmount / 5, "Incentive cannot be more than 20% of bid amount");
 
+    uint256 totalPreviousBid = auction.highestBid + auction.bidderIncentive;
+    require(bidAmount > totalPreviousBid, "Total bid (including incentive) too low");
+    // Set AuctionStatus to BidReceived, note that it can get changed to ExtraTime if the bid is within the last 20 mins of the Auction End Time
+        auction.status = AuctionStatus.BidReceived;
+
+    // If 10 minutes have not passed after the auction was started, do not pay a Bid Incentive
+        if (block.timestamp < auction.startTime + 10 minutes) {
         // Refund the previous highest bidder
-        if (auction.highestBidder != address(0)) {
-            IERC20(auction.bidTokenAddress).transfer(auction.highestBidder, auction.highestBid);
+            if (auction.highestBidder != address(0)) {
+                IERC20(auction.bidTokenAddress).transfer(auction.highestBidder, auction.highestBid);
+            }
+
+        // Update auction details for Current Bid
+            auction.highestBidder = payable(msg.sender);
+            auction.highestBid = bidAmount;
+            auction.bidderIncentive = bidderIncentive;
+
+            emit BidPlaced(auctionId, msg.sender, bidAmount);
+            return;
         }
 
-        // Update auction details
-        auction.highestBidder = payable(msg.sender);
-        auction.highestBid = bidAmount;
-        auction.bidderIncentive = bidderIncentive;
-        auction.status = AuctionStatus.PreBid;
-
-        emit BidPlaced(auctionId, msg.sender, bidAmount);
-    }
-
-    /**
-     * @dev Opens the auction for public bidding.
-     * @param auctionId The ID of the auction.
-     */
-    function openAuction(uint256 auctionId) external whenNotPaused {
-        Auction storage auction = auctions[auctionId];
-        require(block.timestamp >= auction.startTime + 10 minutes, "Auction must wait 10 minutes prior to being opened");
-        require(auction.status == AuctionStatus.Open, "Auction is already open");
-
-        auction.status = AuctionStatus.Open;
-    }
-
-    /**
-     * @dev Allows users to bid on an open auction.
-     * @param auctionId The ID of the auction.
-     * @param bidAmount The bid amount.
-     * @param bidderIncentive The incentive for the bidder.
-     */
-    function bid(uint256 auctionId, uint256 bidAmount, uint256 bidderIncentive) external payable whenNotPaused {
-
-        Auction storage auction = auctions[auctionId];
-        require(auction.status != AuctionStatus.Finalized, "Auction is Closed");
-        require(block.timestamp <= auction.endTime, "Auction has already Ended");
-        require(IERC20(auction.bidTokenAddress).transferFrom(msg.sender, address(this), bidAmount), "Token transfer failed");
-
-
-        uint256 totalPreviousBid = auction.highestBid + auction.bidderIncentive;
-        require(bidAmount > totalPreviousBid, "Total bid (including incentive) too low");
-
-        if (block.timestamp < auction.endTime && block.timestamp > auction.endTime - 20 minutes) {
+    // Extra Time to Bid if a bid is placed in the final 20 minutes before the auction ends
+        if (block.timestamp > auction.endTime - 20 minutes) {
             auction.endTime += 20 minutes;
             auction.status = AuctionStatus.ExtraTime;
         }
-        else {
-            auction.status = AuctionStatus.Bid;
-        }
 
-        // Refund the previous highest bidder
+    // Refund the previous highest bidder
         if (auction.highestBidder != address(0)) {
             IERC20(auction.bidTokenAddress).transfer(auction.highestBidder, auction.highestBid + auction.bidderIncentive);
             totalIncentives += auction.bidderIncentive;
         }
 
-        // Update auction details
+    // Update auction details
         auction.highestBidder = payable(msg.sender);
         auction.highestBid = bidAmount;
         auction.bidderIncentive = bidderIncentive;
 
+        emit BidPlaced(auctionId, msg.sender, bidAmount);
     }
 
-       /**
-     * @dev Allows the seller to cancel the auction if no bids have been placed.
+    /**
+     * @dev Allows the Seller to cancel the auction if no bids have been placed.
      * @param auctionId The ID of the auction.
      */
     function cancelAuction(uint256 auctionId) public {
@@ -248,7 +230,7 @@ function startAuction(
     */
     function finalizeAuction(uint256 auctionId) external whenNotPaused nonReentrant {
     Auction storage auction = auctions[auctionId];
-    require(auction.status == AuctionStatus.Open || auction.status == AuctionStatus.Bid, "Auction is not open yet");
+    require(auction.status == AuctionStatus.BidReceived, "Auction is not open yet");
     require(block.timestamp >= auction.endTime, "Auction has not Ended");
     require(auction.status != AuctionStatus.Finalized, "Auction is already completed and finalized");
 

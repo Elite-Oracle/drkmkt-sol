@@ -87,7 +87,7 @@ contract DarkMarketAuctionTest is Test {
         uint256 auctionId = auction.nextAuctionId() - 1;
 
         vm.prank(bidderWallet);
-        auction.preBid(auctionId, 110 ether, 5 ether);
+        auction.bid(auctionId, 110 ether, 5 ether);
         console.log("PREBID Completed...");
 
         vm.warp(block.timestamp + 10 minutes);
@@ -133,7 +133,7 @@ contract DarkMarketAuctionTest is Test {
     uint256 auctionId = auction.nextAuctionId() - 1;
 
     vm.prank(bidderWallet);
-    auction.preBid(auctionId, 330 ether, 15 ether);
+    auction.bid(auctionId, 330 ether, 15 ether);
     console.log("PREBID Completed...");
 
     vm.warp(block.timestamp + 10 minutes);
