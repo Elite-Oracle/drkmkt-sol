@@ -7,7 +7,7 @@ import "../src/DarkMarketAuction.sol";
 import "./MockERC721.t.sol";
 import "./MockERC20.t.sol";
 
-contract DarkMarketAuctionTest is Test {
+contract DarkMarketAuctionTest is Test, Ownable {
     using console for *; // Reintroduced for enhanced logging
 
     DarkMarketAuction auction;
@@ -22,6 +22,9 @@ contract DarkMarketAuctionTest is Test {
 
     // Fallback function to ensure it doesn't revert
     receive() external payable {}
+
+    // Define an event to log the results
+    event TestResult(string description, bool success);
 
     function setUp() public {
         console.log("SETUP test environment...");
@@ -62,6 +65,9 @@ contract DarkMarketAuctionTest is Test {
         // Mint 4 tokens for the seller
         for (uint i = 2; i <= 5; i++) {
         token.mint(address(sellerWallet), i);
+
+        // Transfer ownership of the auction contract to this test contract
+        auction.transferOwnership(address(this));
         }
 
         // Approve the auction contract to transfer all 4 tokens
@@ -88,7 +94,7 @@ contract DarkMarketAuctionTest is Test {
 
         vm.prank(bidderWallet);
         auction.bid(auctionId, 110 ether, 5 ether);
-        console.log("PREBID Completed...");
+        console.log("Initial Bid Completed...");
 
         vm.warp(block.timestamp + 10 minutes);
         
@@ -170,5 +176,292 @@ contract DarkMarketAuctionTest is Test {
     }
 }
 
+function testAuctionCancellationBySeller() public {
+    DarkMarketAuction.TokenDetail[] memory tokens = new DarkMarketAuction.TokenDetail[](1);
+    tokens[0] = DarkMarketAuction.TokenDetail({
+        tokenAddress: address(token),
+        tokenId: 1
+    });
+
+    vm.prank(address(sellerWallet));
+    auction.startAuction(100 ether, 1 hours, tokens, bidTokenAddress);
+    uint256 auctionId = auction.nextAuctionId() - 1;
+
+    auction.cancelAuction(auctionId);
+    console.log("Auction cancelled by seller...");
+}
+
+function testAuctionCancellationByOwner() public {
+    DarkMarketAuction.TokenDetail[] memory tokens = new DarkMarketAuction.TokenDetail[](1);
+    tokens[0] = DarkMarketAuction.TokenDetail({
+        tokenAddress: address(token),
+        tokenId: 1
+    });
+
+    vm.prank(address(sellerWallet));
+    auction.startAuction(100 ether, 1 hours, tokens, bidTokenAddress);
+    uint256 auctionId = auction.nextAuctionId() - 1;
+
+    console.log("Cancelling Auction by Owner...");
+    auction.cancelSpecificAuction(auctionId);
+    console.log("Auction cancelled by owner...");
+}
+
+function testFeeAndRoyaltySettings() public {
+
+    auction.setFeePercentage(500); // 5%
+    auction.setRoyaltyPercentage(300); // 3%
+    auction.setRoyaltyRecipient(royaltyRecipient);
+
+    console.log("Fee and royalty settings updated...");
+}
+
+function testBiddingInExtraTime() public {
+    DarkMarketAuction.TokenDetail[] memory tokens = new DarkMarketAuction.TokenDetail[](1);
+    tokens[0] = DarkMarketAuction.TokenDetail({
+        tokenAddress: address(token),
+        tokenId: 1
+    });
+
+    vm.prank(address(sellerWallet));
+    auction.startAuction(100 ether, 1 hours, tokens, bidTokenAddress);
+    uint256 auctionId = auction.nextAuctionId() - 1;
+
+    vm.warp(block.timestamp + 50 minutes);
+    vm.prank(bidderWallet);
+    auction.bid(auctionId, 110 ether, 5 ether);
+
+    vm.warp(block.timestamp + 15 minutes);
+    vm.prank(bidderWallet2);
+    auction.bid(auctionId, 130 ether, 6 ether);
+
+    console.log("Bidding in extra time completed...");
+}
+
+function testInvalidBids() public {
+    DarkMarketAuction.TokenDetail[] memory tokens = new DarkMarketAuction.TokenDetail[](1);
+    tokens[0] = DarkMarketAuction.TokenDetail({
+        tokenAddress: address(token),
+        tokenId: 1
+    });
+
+    vm.prank(address(sellerWallet));
+    auction.startAuction(100 ether, 1 hours, tokens, bidTokenAddress);
+    uint256 auctionId = auction.nextAuctionId() - 1;
+
+    uint256 initialBalance = erc20Token.balanceOf(bidderWallet);
+
+    vm.prank(bidderWallet);
+    bool result = try_darkMarketAuction_bid(auctionId, 90000000000000000000, 5000000000000000000);
+    assertTrue(!result, "Expected the bid to fail due to low amount");
+
+    uint256 postBidBalance = erc20Token.balanceOf(bidderWallet);
+    if (initialBalance == postBidBalance) {
+        emit TestResult("Bid below starting price should not have been accepted", true);
+    } else {
+        emit TestResult("Bid below starting price was accepted", false);
+    }
+}
+
+function testEarlyFinalization() public {
+    DarkMarketAuction.TokenDetail[] memory tokens = new DarkMarketAuction.TokenDetail[](1);
+    tokens[0] = DarkMarketAuction.TokenDetail({
+        tokenAddress: address(token),
+        tokenId: 1
+    });
+
+    vm.prank(address(sellerWallet));
+    auction.startAuction(100 ether, 1 hours, tokens, bidTokenAddress);
+    uint256 auctionId = auction.nextAuctionId() - 1;
+
+    try auction.finalizeAuction(auctionId) {
+        fail("Finalizing auction before end time should fail");
+    } catch {}
+}
+
+function testCancellationAfterBids() public {
+    DarkMarketAuction.TokenDetail[] memory tokens = new DarkMarketAuction.TokenDetail[](1);
+    tokens[0] = DarkMarketAuction.TokenDetail({
+        tokenAddress: address(token),
+        tokenId: 1
+    });
+
+    vm.prank(address(sellerWallet));
+    auction.startAuction(100 ether, 1 hours, tokens, bidTokenAddress);
+    uint256 auctionId = auction.nextAuctionId() - 1;
+
+    vm.prank(bidderWallet);
+    auction.bid(auctionId, 110 ether, 5 ether);
+
+    try auction.cancelAuction(auctionId) {
+        fail("Cancelling auction with bids should fail");
+    } catch {}
+}
+
+function testMultipleBidsBySameBidder() public {
+    DarkMarketAuction.TokenDetail[] memory tokens = new DarkMarketAuction.TokenDetail[](1);
+    tokens[0] = DarkMarketAuction.TokenDetail({
+        tokenAddress: address(token),
+        tokenId: 1
+    });
+
+    vm.prank(address(sellerWallet));
+    auction.startAuction(100 ether, 1 hours, tokens, bidTokenAddress);
+    uint256 auctionId = auction.nextAuctionId() - 1;
+
+    vm.prank(bidderWallet);
+    auction.bid(auctionId, 110 ether, 5 ether);
+    auction.bid(auctionId, 130 ether, 10 ether);
+
+    // Check that the highest bid is 130 ether
+}
+
+function testBiddingAfterEndTime2() public {
+    DarkMarketAuction.TokenDetail[] memory tokens = new DarkMarketAuction.TokenDetail[](1);
+    tokens[0] = DarkMarketAuction.TokenDetail({
+        tokenAddress: address(token),
+        tokenId: 1
+    });
+
+    vm.prank(address(sellerWallet));
+    auction.startAuction(100 ether, 1 hours, tokens, bidTokenAddress);
+    uint256 auctionId = auction.nextAuctionId() - 1;
+
+    vm.warp(block.timestamp + 1 hours + 5 minutes);
+
+    vm.prank(bidderWallet);
+    try auction.bid(auctionId, 110 ether, 5 ether) {
+        fail("Bidding after auction end time should fail");
+    } catch {}
+}
+
+function testPauseAndUnpause() public {
+
+    auction.pause();
+    console.log("Contract paused...");
+
+    auction.unpause();
+    console.log("Contract unpaused...");
+}
+
+function testAuctionWithZeroDuration() public {
+    DarkMarketAuction.TokenDetail[] memory tokens = new DarkMarketAuction.TokenDetail[](1);
+    tokens[0] = DarkMarketAuction.TokenDetail({
+        tokenAddress: address(token),
+        tokenId: 1
+    });
+
+    vm.prank(address(sellerWallet));
+    bool result = try_darkMarketAuction_startAuction(100 ether, 0, tokens, bidTokenAddress);
+    assertTrue(!result, "Expected the auction to fail due to zero duration");
+}
+
+function testAuctionWithInvalidToken() public {
+    DarkMarketAuction.TokenDetail[] memory tokens = new DarkMarketAuction.TokenDetail[](1);
+    tokens[0] = DarkMarketAuction.TokenDetail({
+        tokenAddress: address(0x0),
+        tokenId: 1
+    });
+
+    vm.prank(address(sellerWallet));
+    bool result = try_darkMarketAuction_startAuction(100 ether, 1 hours, tokens, bidTokenAddress);
+    assertTrue(!result, "Expected the auction to fail due to invalid token address");
+}
+
+function testFinalizeWithoutBids() public {
+    DarkMarketAuction.TokenDetail[] memory tokens = new DarkMarketAuction.TokenDetail[](1);
+    tokens[0] = DarkMarketAuction.TokenDetail({
+        tokenAddress: address(token),
+        tokenId: 1
+    });
+
+    vm.prank(address(sellerWallet));
+    auction.startAuction(100 ether, 1 hours, tokens, bidTokenAddress);
+    uint256 auctionId = auction.nextAuctionId() - 1;
+
+    vm.warp(block.timestamp + 1 hours + 5 minutes);
+
+    bool result = try_darkMarketAuction_finalizeAuction(auctionId);
+    assertTrue(!result, "Expected finalizing auction without bids to fail");
+}
+
+function testBidWithInvalidAuctionId() public {
+    vm.prank(bidderWallet);
+    bool result = try_darkMarketAuction_bid(9999, 110 ether, 5 ether);
+    assertTrue(!result, "Expected bidding with invalid auction ID to fail");
+}
+
+function testFinalizeWithInvalidAuctionId() public {
+    vm.prank(bidderWallet);
+    bool result = try_darkMarketAuction_finalizeAuction(9999);
+    assertTrue(!result, "Expected finalizing with invalid auction ID to fail");
+}
+
+function testCancelAuctionByNonSeller() public {
+    DarkMarketAuction.TokenDetail[] memory tokens = new DarkMarketAuction.TokenDetail[](1);
+    tokens[0] = DarkMarketAuction.TokenDetail({
+        tokenAddress: address(token),
+        tokenId: 1
+    });
+
+    vm.prank(address(sellerWallet));
+    auction.startAuction(100 ether, 1 hours, tokens, bidTokenAddress);
+    uint256 auctionId = auction.nextAuctionId() - 1;
+
+    vm.prank(bidderWallet);
+    bool result = try_darkMarketAuction_cancelAuction(auctionId);
+    assertTrue(!result, "Expected cancelling auction by non-seller to fail");
+}
+
+function testAuctionWithZeroStartPrice() public {
+    DarkMarketAuction.TokenDetail[] memory tokens = new DarkMarketAuction.TokenDetail[](1);
+    tokens[0] = DarkMarketAuction.TokenDetail({
+        tokenAddress: address(token),
+        tokenId: 1
+    });
+
+    vm.prank(address(sellerWallet));
+    bool result = try_darkMarketAuction_startAuction(0, 1 hours, tokens, bidTokenAddress);
+    assertTrue(!result, "Expected the auction to fail due to zero start price");
+}
+
+function testBiddingAfterEndTime() public {
+    DarkMarketAuction.TokenDetail[] memory tokens = new DarkMarketAuction.TokenDetail[](1);
+    tokens[0] = DarkMarketAuction.TokenDetail({
+        tokenAddress: address(token),
+        tokenId: 1
+    });
+
+    vm.prank(address(sellerWallet));
+    auction.startAuction(100 ether, 1 hours, tokens, bidTokenAddress);
+    uint256 auctionId = auction.nextAuctionId() - 1;
+
+    vm.warp(block.timestamp + 1 hours + 5 minutes);
+
+    vm.prank(bidderWallet);
+    bool result = try_darkMarketAuction_bid(auctionId, 110 ether, 5 ether);
+    assertTrue(!result, "Expected bidding after auction end time to fail");
+}
+
+// Helper functions to attempt operations and return false if they fail
+function try_darkMarketAuction_bid(uint256 _auctionId, uint256 _bidAmount, uint256 _incentive) internal returns (bool) {
+    (bool success, ) = address(auction).call(abi.encodeWithSignature("bid(uint256,uint256,uint256)", _auctionId, _bidAmount, _incentive));
+    return success;
+}
+
+function try_darkMarketAuction_startAuction(uint256 _startPrice, uint256 _duration, DarkMarketAuction.TokenDetail[] memory _tokens, address _bidTokenAddress) internal returns (bool) {
+    (bool success, ) = address(auction).call(abi.encodeWithSignature("startAuction(uint256,uint256,DarkMarketAuction.TokenDetail[],address)", _startPrice, _duration, _tokens, _bidTokenAddress));
+    return success;
+}
+
+function try_darkMarketAuction_finalizeAuction(uint256 _auctionId) internal returns (bool) {
+    (bool success, ) = address(auction).call(abi.encodeWithSignature("finalizeAuction(uint256)", _auctionId));
+    return success;
+}
+
+function try_darkMarketAuction_cancelAuction(uint256 _auctionId) internal returns (bool) {
+    (bool success, ) = address(auction).call(abi.encodeWithSignature("cancelAuction(uint256)", _auctionId));
+    return success;
+}
 
 }

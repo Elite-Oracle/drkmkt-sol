@@ -230,7 +230,7 @@ function bid(uint256 auctionId, uint256 bidAmount, uint256 bidderIncentive) exte
     */
     function finalizeAuction(uint256 auctionId) external whenNotPaused nonReentrant {
     Auction storage auction = auctions[auctionId];
-    require(auction.status == AuctionStatus.BidReceived, "Auction is not open yet");
+    require(auction.status == AuctionStatus.Open || auction.status == AuctionStatus.BidReceived, "Auction is not open yet");
     require(block.timestamp >= auction.endTime, "Auction has not Ended");
     require(auction.status != AuctionStatus.Finalized, "Auction is already completed and finalized");
 
@@ -288,7 +288,7 @@ function bid(uint256 auctionId, uint256 bidAmount, uint256 bidderIncentive) exte
         }
 
         for (uint i = 0; i < auction.tokens.length; i++) {
-            IERC721(auction.tokens[i].tokenAddress).safeTransferFrom(address(this), auction.highestBidder, auction.tokens[i].tokenId);
+            IERC721(auction.tokens[i].tokenAddress).safeTransferFrom(address(this), auction.seller, auction.tokens[i].tokenId);
         }
 
         // Remove auction from active auctions
