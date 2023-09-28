@@ -11,6 +11,8 @@
   "license": "ISC",
   "dependencies": {
     "@openzeppelin/contracts": "^4.9.3",
-    "dapp": "latest"
+    "@prb/math": "^4.0.1",
+    "dapp": "latest",
+    "prb-math": "^2.4.3"
   }
 }

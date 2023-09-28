@@ -1,10 +1,7 @@
-// Dark Market Auction Contract v1.2
-// @dev Elite Oracle | Kristian Peter
-// @date September 2023
-
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+// IMPORTS
 import "../node_modules/@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "../node_modules/@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
 import "../node_modules/@openzeppelin/contracts/access/Ownable.sol";
@@ -15,10 +12,16 @@ import "../lib/drkmkt/LibBinarySearchTree.sol";
 
 /**
  * @title DarkMarketAuction
- * @dev This contract allows users to start and bid on auctions for ERC721 tokens.
+ * @dev This contract allows users to start, bid, and finalize auctions for a variety of ERC tokens (digital assets).
+ * @author Elite Oracle | Kristian Peter
+ * September 2023 | Version 1.2
  */
 contract DarkMarketAuction is ERC721Holder, Ownable, Pausable, ReentrancyGuard {
-    
+
+    // ============================
+    // DATA STRUCTURES
+    // ============================
+
     // Represents the Contract Address and Token ID for every ERC721 token
     struct TokenDetail {
         address tokenAddress;
@@ -52,201 +55,158 @@ contract DarkMarketAuction is ERC721Holder, Ownable, Pausable, ReentrancyGuard {
         Open,
         BidReceived,
         ExtraTime,
-        Finalized
+        Closed,
+        Cancelled
     }
 
+    // Mapping to store both amount and ERC20 token address in the case of a Failed Transaction
+    struct PendingWithdrawal {
+        uint256 amount;
+        address tokenAddress;
+    }
+
+    // ============================
+    // STATE VARIABLES
+    // ============================
+
+    // Auction-related
     LibBinarySearchTree.Tree public activeAuctionIds; // Tree to store active auction IDs
     uint256 public nextAuctionId = 1; // Counter for the next auction ID
-    uint32 public feePercentage; // Fee percentage for the platform
-    uint32 public royaltyPercentage; // Royalty percentage for the creator
-    address payable public royaltyRecipient; // Address to receive the royalty
+    mapping(uint256 => Auction) public auctions;  // Mapping from auction ID to its details
 
-    // Extra time added to the auction if a bid is placed in the last 20 minutes.
-    // This helps prevent auction sniping and gives other participants a chance to place their bids.
-    uint32 constant EXTRA_TIME = 20 minutes;
+    // Auction parameters
+    uint32 public minAuctionDuration = 10 minutes;  // Minimum auction duration
+    uint32 public maxAuctionDuration = 12 weeks;  // Minimum auction duration
+    uint32 public warmUpTime = 0 minutes;  // Warm-up time to be used to discourage bots from placing arbitrary opening bids
+    uint32 public Extra_Time = 20 minutes;     // Extra time added to the auction if a bid is placed in the last 20 minutes. This helps prevent auction sniping and gives other participants a chance to place their bids.
+    uint16 public Max_Incentive = 12;  // Maximum bidder incentive in percentage (12%)
+    uint16 public Max_Payment = 1000;     // The maximum payment paid out of the auction is 10% and this is represented by 10^3.
+    uint16 public Max_Assets = 20;     // The maximum number of Assets that can be sold in One Auction.
 
-    // The maximum payment paid out of the auction is 10% and this is represented by 10^3.
-    uint16 constant MAX_PAYMENT = 1000;
+    // Failed transfers
+    mapping(address => PendingWithdrawal) public pendingWithdrawals;
 
-    mapping(uint256 => Auction) public auctions; // Mapping from auction ID to its details
+    // ============================
+    // EVENTS
+    // ============================
 
-    // Event emitted when an auction starts
+    // Auction-related events
     event AuctionStarted(uint256 auctionId, address seller, uint256 startPrice, uint32 endTime);
-    // Event emitted when a bid is placed
-    event BidPlaced(uint256 auctionId, address bidder, uint256 amount);
-    // Event emitted when an auction is finalized
-    event AuctionFinalized(uint256 auctionId, address winner, uint256 amount);
-    // Event emitted when an auction is cancelled
+    event BidPlaced(uint256 auctionId, address bidder, uint256 amount, uint256 incentive);
+    event SellerFinalized(uint256 auctionId, address seller, uint256 amount);    
+    event BidderFinalized(uint256 auctionId, address winner, uint256 amount);    
+    event OwnerFinalized(uint256 auctionId, address owner, uint256 fee, address royaltyAddress, uint256 royalty);
     event AuctionCancelled(uint256 auctionId);
-    // Event emitted when an incentive is given to a bidder
     event IncentiveReceived(address indexed bidder, uint256 amount);
-    // Event emitted when extra time is added to the auction due to a bid in the final 20 minutes.
     event ExtraTimeAdded(uint256 auctionId, address bidder, uint32 newEndTime);
 
-    // TEST LOGS
-    event Log(string logging);
-    event LogInt(string logging, uint256 num);
+    // Parameter update events
+    event MinAuctionDurationUpdated(uint32 newDuration);
+    event MaxAuctionDurationUpdated(uint32 newDuration);
+    event MaxIncentiveUpdated(uint16 newIncentive);
+    event WarmUpTimeUpdated(uint32 newWarmUp);
+    event MaxPaymentUpdated(uint32 newMaxPmt);
+    event ExtraTimeUpdated(uint32 newExtraTime);
+    event MaxAssetsUpdated(uint32 newMaxAssets);
+    event TransferFailed(address tokenAddress, address to, uint256 tokenId);
 
+    // ============================
+    // AUCTION FUNCTIONS
+    // ============================
 
-/**
- * @dev Starts an auction by transferring the ERC721 tokens into the contract.
- * @param startPrice The starting price for the auction.
- * @param duration The duration of the auction in seconds (86,400 = 1 day).
- * @param _tokens The array of TokenDetail containing the ERC721 contract addresses and token IDs.
- * @param ERC20forBidding The address of the ERC20 token used for bidding.
- * @param _fees The fees and address for royalties.
- */
+    /**
+     * @notice Starts an auction by transferring the ERC721 tokens into the contract.
+     * @param startPrice The starting price for the auction.
+     * @param duration The duration of the auction in seconds (86,400 = 1 day).
+     * @param _tokens The array of TokenDetail containing the ERC721 contract addresses and token IDs.
+     * @param ERC20forBidding The address of the ERC20 token used for bidding.
+     * @param _fees The fees and address for royalties.
+     * @return The ID of the newly created auction.
+     */
     function startAuction(
         uint256 startPrice,
         uint32 duration,
         TokenDetail[] memory _tokens, 
         address ERC20forBidding,
-        FeeDetail[] memory _fees
+        FeeDetail memory _fees
     ) external whenNotPaused returns (uint256) {
-        // The must be at least 1 and less than 30 assets total in the auction.
-        require(_tokens.length > 0 && _tokens.length < 30, "At least one token required and less than 30 total assets");
-        // The auction must be at least 10 minutes.
-        require (duration > 10 minutes, "The auction must be longer than 10 minutes.");
+        require(_tokens.length > 0 && _tokens.length <= Max_Assets, "Invalid number of tokens for the auction");
+        require(duration >= minAuctionDuration && duration <= maxAuctionDuration, "Invalid auction duration");
+        require(_fees.contractFee <= Max_Payment && _fees.royaltyFee <= Max_Payment, "Fee percentage too high");
 
-    // Require Fees and Royalties to not exceed 10%
-    require(_fees[0].contractFee <= MAX_PAYMENT, "Fee percentage too high");
-    require(_fees[0].royaltyFee <= MAX_PAYMENT, "Royalty percentage too high");
+        // Initialize a new auction
+        Auction storage newAuction = auctions[nextAuctionId];
+        newAuction.seller = payable(msg.sender);
+        newAuction.startTime = uint32(block.timestamp);
+        newAuction.endTime = uint32(block.timestamp + duration);
+        newAuction.highestBid = startPrice;
+        newAuction.status = AuctionStatus.Open;
+        newAuction.bidTokenAddress = ERC20forBidding;
+        newAuction.fees = _fees;
 
-    // Transfer each ERC721 token. Originally required Approval check but contract will revert if the tokens are not approved and additional checks require additional Gas, removed for efficiency.
-    for (uint i = 0; i < _tokens.length; i++) {
-        IERC721(_tokens[i].tokenAddress).safeTransferFrom(msg.sender, address(this), _tokens[i].tokenId);
-    }
+        // Transfer each ERC721 token to the contract
+        for (uint i = 0; i < _tokens.length; i++) {
+            IERC721(_tokens[i].tokenAddress).safeTransferFrom(msg.sender, address(this), _tokens[i].tokenId);
+            newAuction.tokens.push(_tokens[i]);
+        }
 
-    // Create a new auction
-    Auction storage newAuction = auctions[nextAuctionId];
-    newAuction.seller = payable(msg.sender);
-    newAuction.startTime = uint32(block.timestamp);
-    newAuction.endTime = uint32(block.timestamp + duration);
-    newAuction.highestBid = startPrice;
-    newAuction.status = AuctionStatus.Open;
-    newAuction.bidTokenAddress = ERC20forBidding;
-    newAuction.fees.contractFee = _fees[0].contractFee;
-    newAuction.fees.royaltyFee = _fees[0].royaltyFee;
-    newAuction.fees.royaltyAddress = _fees[0].royaltyAddress;
-
-
-    // Add tokens to the auction
-    for (uint i = 0; i < _tokens.length; i++) {
-        newAuction.tokens.push(_tokens[i]);
-    }
-
-        emit AuctionStarted(nextAuctionId, msg.sender,     startPrice, newAuction.endTime);
-        LibBinarySearchTree.insert(activeAuctionIds,       nextAuctionId, nextAuctionId);
+        emit AuctionStarted(nextAuctionId, msg.sender, startPrice, newAuction.endTime);
+        LibBinarySearchTree.insert(activeAuctionIds, nextAuctionId, nextAuctionId);
         nextAuctionId++;
 
-        // Return the auctionId
         return nextAuctionId - 1;
     }
 
     /**
-    * @dev Calculate the incentive for a bidder based on their bid amount and the current highest bid.
-    * @param bidAmount The amount of the new bid.
-    * @param highestBid The amount of the current highest bid.
-    * @return The incentive amount for the bidder.
-    */
-    function calculateIncentive(uint256 bidAmount, uint256 highestBid) public returns (uint256) {
-    // Ensure the new bid is higher than the current highest bid
-    require(bidAmount > highestBid, "Current bid is less than previous bid");
-emit LogInt("Calculate Highest Bid = ", highestBid);
-emit LogInt("Calc Current Bid = ", bidAmount);
-    // Constants scaled up by 10^18 for Solidity Gwei token representation
-    uint256 scale = 10**18; // 10^18 for Ether
-
-    // If there's no previous bid, return an 11% incentive of the opening bid
-    if (highestBid == 0) {
-        return bidAmount * 11 / 100;
-    } 
-
-    // Calculate the percentage by which the new bid exceeds the highest bid
-    uint256 overbidPercentage = (bidAmount * scale / highestBid) - scale;
-emit LogInt("Calculate OverBid = ", overbidPercentage);
-    uint256 incentivePercentage;
-
-    // Determine the incentive percentage based on the overbid percentage
-    if (overbidPercentage < 20 * scale / 100) {
-        incentivePercentage = 2 * scale / 100; // 2%
-        emit LogInt("Calculate Less than 2% = ", incentivePercentage);
-    } else if (overbidPercentage >= 110 * scale / 100) {
-        incentivePercentage = 12 * scale / 100; // 12%
-        emit LogInt("Calculate Over 12% = ", incentivePercentage);
-    } else {
-        // Calculate the base incentive of 2% and add 1% for every 10% overbid starting from 20%
-        incentivePercentage = 2 * scale / 100 + ((overbidPercentage - 20 * scale / 100) / (10 * scale / 100));
-        emit LogInt("Calculate between 2% to 12% = ", incentivePercentage);
-    }
-
-    // Calculate the incentive amount based on the determined incentive percentage
-        emit LogInt("Calculate bidAmount = ", bidAmount);
-        emit LogInt("Calculate scale = ", scale);
-        emit LogInt("Calculate Returning = ", bidAmount * incentivePercentage / scale);
-    return bidAmount * incentivePercentage / scale;
-    }
-
-
-    /**
-    * @dev Function bid - allow users to Bid on Auction
-    * @param auctionId The ID of the auction.
-    * @param bidAmount The bid amount.
-    */
-    function bid(uint256 auctionId, uint256 bidAmount) external nonReentrant whenNotPaused {
-        // TEST LOG
-emit Log("Starting Bid Function...");
-
+     * @notice Allows users to place bids on an auction.
+     * @param auctionId The ID of the auction.
+     * @param bidAmount The bid amount.
+     * @param incentiveAmount The bidder incentive.
+     */
+    function bid(uint256 auctionId, uint256 bidAmount, uint256 incentiveAmount) external nonReentrant whenNotPaused {
         Auction storage auction = auctions[auctionId];
-        require(auction.status != AuctionStatus.Finalized && block.timestamp <= auction.endTime, "Auction has Ended");
-        // Ensure the bid amount is greater than the current highest bid
+        require(block.timestamp <= auction.endTime, "Auction has ended");
         require(bidAmount > auction.highestBid, "Bid amount must be greater than the current highest bid");
+        require(incentiveAmount <= (Max_Incentive * bidAmount) / 100, "Bidder incentive too high");
 
-        IERC20 bidToken = IERC20(auction.bidTokenAddress); // the token used to bid on this auction
-        uint32 warmUpTime = 10 minutes; // the time required to elapse before incentives are rewarded to bidders
+        IERC20 bidToken = IERC20(auction.bidTokenAddress);
+        require(bidToken.transferFrom(msg.sender, address(this), bidAmount), "Token transfer failed");
 
-    // Transfer the bid amount from the bidder to the contract
-    require(bidToken.transferFrom(msg.sender, address(this), bidAmount), "Token transfer failed");
+        // Check for extra time condition
+        if (block.timestamp > auction.endTime - Extra_Time) {
+            auction.endTime += Extra_Time;
+            auction.status = AuctionStatus.ExtraTime;
+            emit ExtraTimeAdded(auctionId, msg.sender, auction.endTime);
+        } else {
+            auction.status = AuctionStatus.BidReceived;
+        }
 
-    // Calculate the Incentive for the current Bidder
-    uint256 incentive = calculateIncentive(bidAmount, auction.highestBid);
+        // Refund previous bidder if applicable
+        if (auction.highestBidder != address(0) && block.timestamp >= auction.startTime + warmUpTime) {
+            uint256 refundAmount = auction.highestBid + auction.bidderIncentive;
+            bidToken.transfer(auction.highestBidder, refundAmount);
+            auction.totalIncentives += incentiveAmount;
+            emit IncentiveReceived(auction.highestBidder, auction.bidderIncentive);
+        } else if (auction.highestBidder != address(0)) {
+            bidToken.transfer(auction.highestBidder, auction.highestBid);
+        }
 
-    // Extra Time to Bid if a bid is placed in the final 20 minutes before the auction ends
-    if (block.timestamp > auction.endTime - EXTRA_TIME) {
-        auction.endTime += EXTRA_TIME;
-        auction.status = AuctionStatus.ExtraTime;
-        emit ExtraTimeAdded(auctionId, msg.sender, auction.endTime);
-    } else {auction.status = AuctionStatus.BidReceived;}
+        // Update auction details
+        auction.highestBidder = msg.sender;
+        auction.highestBid = bidAmount;
+        auction.bidderIncentive = incentiveAmount;
 
-    // If there is a Previous Bidder, refund the previous bidder and pay the incentive if the auction has been started for at least 10 minutes. The 10 minute 'warmUpTime' is to reduce botting and ensure fair bidding for all bidders
-    if (auction.highestBidder != address(0) && block.timestamp >= auction.startTime + warmUpTime) {
-        IERC20(auction.bidTokenAddress).transfer(auction.highestBidder, auction.highestBid + auction.bidderIncentive);
-        auction.totalIncentives += incentive;
-        emit IncentiveReceived(auction.highestBidder, incentive);
-    } else if (auction.highestBidder != address(0)) {
-        IERC20(auction.bidTokenAddress).transfer(auction.highestBidder, auction.highestBid);
+        emit BidPlaced(auctionId, auction.highestBidder, auction.highestBid, auction.bidderIncentive);
     }
 
-    // Update auction details
-    auction.highestBidder = msg.sender;
-    auction.highestBid = bidAmount;
-    auction.bidderIncentive = incentive;
-
-//emit LogInt("BIDDING Contract Balance = ", bidToken.balanceOf(address(this)));
-//emit LogInt("BIDDING Total Incentives = ", auction.totalIncentives);
-//emit LogInt("BIDDING Highest Bid = ", auction.highestBid);
-
-    emit BidPlaced(auctionId, msg.sender, bidAmount);
-    }
-
-    /**
+    /** Cancel Auction (Seller)
      * @dev Allows the Seller to cancel the auction if no bids have been placed.
      * @param auctionId The ID of the auction.
      */
     function cancelAuction(uint256 auctionId) public {
         Auction storage auction = auctions[auctionId];
-        require(msg.sender == auction.seller || msg.sender == owner() || msg.sender == address(this), "Auctions can only be Cancelled by the Seller");
-        require(auction.status == AuctionStatus.Open, "Auction has received bids and cannot be canceled");
+        require(msg.sender == auction.seller || msg.sender == address(this), "Auctions can only be Cancelled by the Seller"); // Seller can cancel auction if no bids received or contract can finalize auction and cancel if no bids were received.
+        require(auction.status == AuctionStatus.Open, "Auction has received bids and cannot be canceled"); // If bids have been made on the auction it cannot be cancelled by the Seller
 
         // Transfer all tokens back to the seller
         for (uint i = 0; i < auction.tokens.length; i++) {
@@ -260,91 +220,101 @@ emit Log("Starting Bid Function...");
         // Remove auction from active auctions
         LibBinarySearchTree.remove(activeAuctionIds, auctionId, auctionId);
 
-        delete auctions[auctionId];
+        auction.status = AuctionStatus.Cancelled;
 
         emit AuctionCancelled(auctionId);
     }
 
-    /*
-    * @dev Finalizes the auction and transfers the ERC721 tokens to the highest bidder. Calculates the transfers for Fees, Royalties, and Seller minus the Incentives paid out. 
-    * @param auctionId The ID of the auction.
-    */
-    function finalizeAuction(uint256 auctionId) external whenNotPaused nonReentrant {
+/**
+ * @dev Finalizes an auction, handling transfers to the seller, highest bidder, and owner.
+ * Depending on the caller, different transfers are executed.
+ * @param auctionId The ID of the auction to finalize.
+ */
+function finalizeAuction(uint256 auctionId) external nonReentrant whenNotPaused {
     Auction storage auction = auctions[auctionId];
-    require(auction.status == AuctionStatus.Open || auction.status == AuctionStatus.BidReceived || auction.status == AuctionStatus.ExtraTime, "Auction Status not approved to End");
     require(block.timestamp >= auction.endTime, "Auction has not Ended");
-    require(auction.status != AuctionStatus.Finalized, "Auction is already completed and finalized");
-       IERC20 bidToken = IERC20(auction.bidTokenAddress);
-       uint256 contractBalance = bidToken.balanceOf(address(this));
-       require(
-           contractBalance >= auction.highestBid - auction.totalIncentives,
-           "Contract doesn't have enough funds to finalize the auction MANNNN"
-       );
-emit LogInt("Checked contract balance for:", auction.highestBid);
 
-    uint256 initialBalance = bidToken.balanceOf(address(this));
-    emit LogInt("Initial Contract Balance", initialBalance);
+    IERC20 bidToken = IERC20(auction.bidTokenAddress);
 
+    // If the caller is the seller or the owner
+    if (msg.sender == auction.seller) {
+        uint256 fee = auction.highestBid * (auction.fees.contractFee / 10000);
+        uint256 royalty = auction.highestBid * (auction.fees.royaltyFee / 10000);
+        uint256 sellerAmount = auction.highestBid - fee - royalty - auction.totalIncentives;
 
-        // TEST LOG
-emit LogInt("FINAL Auction Highest Bid = ", auction.highestBid);
-emit LogInt("FINAL Contract Balance = ", bidToken.balanceOf(address(this)));
-emit LogInt("FINAL Total Incentives = ", auction.totalIncentives);
+        // Safely transfer winning bid to Seller minus incentives and fees
+        safeTransfer(bidToken, auction.seller, sellerAmount);
 
-    // If there are No Bids, cancel the auction
-    if (auction.highestBid == 0) {
-        cancelAuction(auctionId);
-        return;
+        emit SellerFinalized(auctionId, auction.seller, sellerAmount);
     }
 
-    // Update Auction Status to Finalized
-    auction.status = AuctionStatus.Finalized;
+    // If the caller is the highest bidder or the owner
+    if (msg.sender == auction.highestBidder) {
+        // Safely transfer all auctioned tokens to the highest bidder
+        for (uint i = 0; i < auction.tokens.length; i++) {
+            IERC721(auction.tokens[i].tokenAddress).safeTransferFrom(address(this), auction.highestBidder, auction.tokens[i].tokenId);
+        }
 
-    // Transfer Fees and Royalties
-    uint256 fee = auction.highestBid * (auction.fees.contractFee / 10000);
-    uint256 royalty = auction.highestBid * (auction.fees.royaltyFee / 10000);
-    uint256 sellerAmount = auction.highestBid - fee - royalty - auction.totalIncentives;
-
-emit LogInt("Calculated Fee", fee);
-emit LogInt("Calculated Royalty", royalty);
-emit LogInt("Calculated Seller Amount", sellerAmount);
-
-    if (fee > 0) {
-        bidToken.transfer(owner(), fee);
+        emit BidderFinalized(auctionId, auction.highestBidder, auction.highestBid);
     }
 
-    if (royalty > 0) {
-        bidToken.transfer(royaltyRecipient, royalty);
+    // If the caller is the owner
+    if (msg.sender == owner()) {
+        uint256 fee = auction.highestBid * (auction.fees.contractFee / 10000);
+        uint256 royalty = auction.highestBid * (auction.fees.royaltyFee / 10000);
+
+        // Safely transfer Fees to Owner
+        safeTransfer(bidToken, owner(), fee);
+
+        // Safely transfer Royalty Fees to Creator
+        safeTransfer(bidToken, auction.fees.royaltyAddress, royalty);
+
+        emit OwnerFinalized(auctionId, owner(), fee, auction.fees.royaltyAddress, royalty);
     }
-    // Transfer winning bid to Seller minus incentives and fees
-    bidToken.transfer(auction.seller, sellerAmount);
+}
 
-    // Transfer all auctioned tokens to the highest bidder
-    for (uint i = 0; i < auction.tokens.length; i++) {
-        IERC721(auction.tokens[i].tokenAddress).safeTransferFrom(address(this), auction.highestBidder, auction.tokens[i].tokenId);
+/**
+ * @dev Safely transfers tokens, adding to pending withdrawals if the transfer fails.
+ * @param token The ERC20 token to transfer.
+ * @param to The address to transfer to.
+ * @param amount The amount to transfer.
+ */
+function safeTransfer(IERC20 token, address to, uint256 amount) internal {
+    try token.transfer(to, amount) {
+        // Transfer successful
+    } catch {
+        // If transfer fails, add to pending withdrawals
+        pendingWithdrawals[to].amount += amount;
+        pendingWithdrawals[to].tokenAddress = address(token);
     }
+}
 
-    // Remove auction from active auctions
-    LibBinarySearchTree.remove(activeAuctionIds, auctionId, auctionId);
+/**
+ * @dev Allows users to withdraw their funds if a transfer failed during finalizeAuction.
+ */
+function withdrawPending() external {
+    uint256 amount = pendingWithdrawals[msg.sender].amount;
+    address tokenAddress = pendingWithdrawals[msg.sender].tokenAddress;
 
-    delete auctions[auctionId];
+    require(amount > 0, "No funds to withdraw");
+    require(tokenAddress != address(0), "Invalid token address");
 
-uint256 finalBalance = bidToken.balanceOf(address(this));
-emit LogInt("Final Contract Balance", finalBalance);
+    pendingWithdrawals[msg.sender].amount = 0;
+    pendingWithdrawals[msg.sender].tokenAddress = address(0);
 
-    emit AuctionFinalized(auctionId, auction.highestBidder, auction.highestBid);
-    }
+    IERC20(tokenAddress).transfer(msg.sender, amount);
+}
 
-    /**
+    /** Cancel Specific Auction (Owner)
     * @dev Failsafe function to cancel a specific auction by the contract owner.
     * @param auctionId The ID of the auction.
     */
-    function cancelSpecificAuction(uint256 auctionId) public onlyOwner {
+    function cancelSpecificAuction(uint256 auctionId) external onlyOwner {
         Auction storage auction = auctions[auctionId];
         require(auction.seller != address(0), "Auction does not exist");
 
         if (auction.highestBidder != address(0)) {
-        IERC20(auction.bidTokenAddress).transfer(auction.highestBidder, auction.highestBid);
+        IERC20(auction.bidTokenAddress).transfer(auction.highestBidder, auction.highestBid - auction.totalIncentives);
     }
 
     for (uint i = 0; i < auction.tokens.length; i++) {
@@ -354,27 +324,12 @@ emit LogInt("Final Contract Balance", finalBalance);
     // Remove auction from active auctions
     LibBinarySearchTree.remove(activeAuctionIds, auctionId, auctionId);
 
-    delete auctions[auctionId];
+    auction.status = AuctionStatus.Cancelled;
 
     emit AuctionCancelled(auctionId);
     }
 
-    /**
-    * @dev Failsafe function to cancel all auctions.
-    */
-    function cancelAllAuctions(uint256 limit) external onlyOwner {
-        for (uint i = 0; i < limit; i++) {
-        // Get the first auctionId from the activeAuctionIds tree.
-            (, uint auctionId) = LibBinarySearchTree.keyValueAtRank(activeAuctionIds, 0);
-            if (auctionId == 0) {
-            break;  // No more auctions to cancel
-            }
-            cancelSpecificAuction(auctionId);
-        }
-    }
-
-
-    /**
+    /** Get Active Auctions (returns arrary of Open Auctions)
     * @dev Get auctions that are still active.
     */
     function getActiveAuctions(uint256 start, uint256 limit) external view returns (Auction[] memory) {
@@ -424,7 +379,15 @@ emit LogInt("Final Contract Balance", finalBalance);
         return LibBinarySearchTree.count(activeAuctionIds);
     }
 
-    /**
+    /** Get Auction Status
+    * @dev Returns the Status of active auctions.
+    * @return The Status of active auctions.
+    */
+    function getAuctionStatus(uint256 auctionId) external view returns (AuctionStatus) {
+        return auctions[auctionId].status;
+    }
+
+    /** Get Auction End Time
     * @dev Returns the end time of the auction.
     * @return The end time of the current auction.
     */
@@ -442,4 +405,72 @@ emit LogInt("Final Contract Balance", finalBalance);
         revert("DarkMarketAuction: Ether not accepted");
     }
 
+/**
+ * @dev Allows the contract owner to set the minimum auction duration.
+ * @param _duration The new minimum auction duration.
+ */
+function setMinAuctionDuration(uint32 _duration) external onlyOwner {
+    require(_duration >= 1 minutes, "Minimum Auction Duration must be longer than 1 minute");
+    minAuctionDuration = _duration;
+    emit MinAuctionDurationUpdated(_duration);
+}
+
+/**
+ * @dev Allows the contract owner to set the maximum auction duration.
+ * @param _duration The new maximum auction duration.
+ */
+function setMaxAuctionDuration(uint32 _duration) external onlyOwner {
+    require(_duration <= 52 weeks, "Maximum Auction Duration must be less than 1 year");
+    maxAuctionDuration = _duration;
+    emit MaxAuctionDurationUpdated(_duration);
+}
+
+/** Set Max Assets (only owner)
+ * @dev Allows the contract owner to set the maximum number of assets allowed in each auction.
+ * @param _assets The new minimum auction duration.
+ */
+function setMaxAssets(uint16 _assets) external onlyOwner {
+    require(_assets <= 100, "Maximum Number of Assets in an Auction must be less than 100");
+    Max_Assets = _assets;
+    emit MaxAssetsUpdated(_assets);
+}
+
+/**
+ * @dev Allows the contract owner to set the maximum incentive.
+ * @param _incentive The new maximum incentive in percentage.
+ */
+function setMaxIncentive(uint16 _incentive) external onlyOwner {
+    require(_incentive <= 100, "Incentive cannot be more than 100%");
+    Max_Incentive = _incentive;
+    emit MaxIncentiveUpdated(_incentive);
+}
+
+/**
+ * @dev Allows the contract owner to set the warm-up time.
+ * @param _warmUp The new warm-up time.
+ */
+function setWarmUpTime(uint32 _warmUp) external onlyOwner {
+    warmUpTime = _warmUp;
+    emit WarmUpTimeUpdated(_warmUp);
+}
+
+/** Set Extra Time (Only Owner)
+ * @dev Allows the contract owner to set the extra time added when a bidder places a bid in the final minutes of an auction. Only allowed to be 12 hours maximum.
+ * @param _extraTime The new extra auction time.
+ */
+function setExtraTime(uint32 _extraTime) external onlyOwner {
+    require(_extraTime <= 12 hours);
+    Extra_Time = _extraTime;
+    emit ExtraTimeUpdated(_extraTime);
+}
+
+/** Set Max Payment (Only Owner)
+ * @dev Allows the contract owner to set the maximum payment for contract fees and royalties. 10% is the maximum and the scale is 10^3 (1000 = 10%).
+ * @param _maxPmt The new warm-up time.
+ */
+function setMaxPayment(uint16 _maxPmt) external onlyOwner {
+    require(_maxPmt <= 1000, "Fees must be below 10%");
+    Max_Payment = _maxPmt;
+    emit MaxPaymentUpdated(_maxPmt);
+}
 }
