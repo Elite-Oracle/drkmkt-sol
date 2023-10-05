@@ -8,13 +8,12 @@ import "../node_modules/@openzeppelin/contracts/access/Ownable.sol";
 import "../node_modules/@openzeppelin/contracts/security/Pausable.sol";
 import "../node_modules/@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "../node_modules/@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "../lib/drkmkt/LibBinarySearchTree.sol";
 
 /**
  * @title DarkMarketAuction
  * @dev This contract allows users to start, bid, and finalize auctions for a variety of ERC tokens (digital assets).
  * @author Elite Oracle | Kristian Peter
- * September 2023 | Version 1.2
+ * October 2023 | Version 1.3.1
  */
 contract DarkMarketAuction is ERC721Holder, Ownable, Pausable, ReentrancyGuard {
 
@@ -70,7 +69,6 @@ contract DarkMarketAuction is ERC721Holder, Ownable, Pausable, ReentrancyGuard {
     // ============================
 
     // Auction-related
-    LibBinarySearchTree.Tree public activeAuctionIds; // Tree to store active auction IDs
     uint256 public nextAuctionId = 1; // Counter for the next auction ID
     mapping(uint256 => Auction) public auctions;  // Mapping from auction ID to its details
 
@@ -151,7 +149,6 @@ contract DarkMarketAuction is ERC721Holder, Ownable, Pausable, ReentrancyGuard {
         }
 
         emit AuctionStarted(nextAuctionId, msg.sender, startPrice, newAuction.endTime);
-        LibBinarySearchTree.insert(activeAuctionIds, nextAuctionId, nextAuctionId);
         nextAuctionId++;
 
         return nextAuctionId - 1;
@@ -216,9 +213,6 @@ contract DarkMarketAuction is ERC721Holder, Ownable, Pausable, ReentrancyGuard {
                 auction.tokens[i].tokenId
             );
         }
-
-        // Remove auction from active auctions
-        LibBinarySearchTree.remove(activeAuctionIds, auctionId, auctionId);
 
         auction.status = AuctionStatus.Cancelled;
 
@@ -321,40 +315,9 @@ function withdrawPending() external {
         IERC721(auction.tokens[i].tokenAddress).safeTransferFrom(address(this), auction.seller, auction.tokens[i].tokenId);
     }
 
-    // Remove auction from active auctions
-    LibBinarySearchTree.remove(activeAuctionIds, auctionId, auctionId);
-
     auction.status = AuctionStatus.Cancelled;
 
     emit AuctionCancelled(auctionId);
-    }
-
-    /** Get Active Auctions (returns arrary of Open Auctions)
-    * @dev Get auctions that are still active.
-    */
-    function getActiveAuctions(uint256 start, uint256 limit) external view returns (Auction[] memory) {
-    // Ensure the limit doesn't exceed the number of active auctions.
-        uint256 activeAuctionCount = LibBinarySearchTree.count(activeAuctionIds);
-
-        if (start + limit > activeAuctionCount) {
-        limit = activeAuctionCount - start;
-        }
-
-        require(limit > 0, "No active auctions");
-
-        Auction[] memory activeAuctions = new Auction[](limit);
-
-    // Get the first auctionId from the activeAuctionIds tree starting at start.
-        (uint value, uint auctionId) = LibBinarySearchTree.keyValueAtRank(activeAuctionIds, start);
-        activeAuctions[0] = auctions[auctionId];
-
-    // Start from i = 1 since the first auction is already fetched.
-        for (uint256 i = 1; i < limit; i++) {
-            auctionId = LibBinarySearchTree.next(activeAuctionIds, auctionId, value);  // Update the auctionId for the next iteration
-            activeAuctions[i] = auctions[auctionId];
-        }
-
-        return activeAuctions;
     }
 
     /**
@@ -369,14 +332,6 @@ function withdrawPending() external {
      */
     function unpause() external onlyOwner {
         _unpause();
-    }
-
-    /**
-    * @dev Returns the count of active auctions.
-    * @return The count of active auctions.
-    */
-    function getActiveAuctionCount() external view returns (uint256) {
-        return LibBinarySearchTree.count(activeAuctionIds);
     }
 
     /** Get Auction Status
