@@ -13,7 +13,7 @@ import "../node_modules/@openzeppelin/contracts/token/ERC20/IERC20.sol";
  * @title DarkMarketAuction
  * @dev This contract allows users to start, bid, and finalize auctions for a variety of ERC tokens (digital assets).
  * @author Elite Oracle | Kristian Peter
- * October 2023 | Version 1.3.1
+ * October 2023 | Version 1.3.2
  */
 contract DarkMarketAuction is ERC721Holder, Ownable, Pausable, ReentrancyGuard {
 
@@ -73,10 +73,10 @@ contract DarkMarketAuction is ERC721Holder, Ownable, Pausable, ReentrancyGuard {
     mapping(uint256 => Auction) public auctions;  // Mapping from auction ID to its details
 
     // Auction parameters
-    uint32 public minAuctionDuration = 10 minutes;  // Minimum auction duration
+    uint32 public minAuctionDuration = 1 minutes;  // Minimum auction duration
     uint32 public maxAuctionDuration = 12 weeks;  // Minimum auction duration
     uint32 public warmUpTime = 0 minutes;  // Warm-up time to be used to discourage bots from placing arbitrary opening bids
-    uint32 public Extra_Time = 20 minutes;     // Extra time added to the auction if a bid is placed in the last 20 minutes. This helps prevent auction sniping and gives other participants a chance to place their bids.
+    uint32 public Extra_Time = 0 minutes;     // Extra time added to the auction if a bid is placed in the last minutes of the bidding. This helps prevent auction sniping and gives other participants a chance to place their bids.
     uint16 public Max_Incentive = 12;  // Maximum bidder incentive in percentage (12%)
     uint16 public Max_Payment = 1000;     // The maximum payment paid out of the auction is 10% and this is represented by 10^3.
     uint16 public Max_Assets = 20;     // The maximum number of Assets that can be sold in One Auction.
@@ -90,13 +90,12 @@ contract DarkMarketAuction is ERC721Holder, Ownable, Pausable, ReentrancyGuard {
 
     // Auction-related events
     event AuctionStarted(uint256 auctionId, address seller, uint256 startPrice, uint32 endTime);
-    event BidPlaced(uint256 auctionId, address bidder, uint256 amount, uint256 incentive);
+    event BidPlaced(uint256 auctionId, address bidder, uint256 amount, uint256 incentive, uint32 endTime);
     event SellerFinalized(uint256 auctionId, address seller, uint256 amount);    
     event BidderFinalized(uint256 auctionId, address winner, uint256 amount);    
     event OwnerFinalized(uint256 auctionId, address owner, uint256 fee, address royaltyAddress, uint256 royalty);
     event AuctionCancelled(uint256 auctionId);
     event IncentiveReceived(address indexed bidder, uint256 amount);
-    event ExtraTimeAdded(uint256 auctionId, address bidder, uint32 newEndTime);
 
     // Parameter update events
     event MinAuctionDurationUpdated(uint32 newDuration);
@@ -173,7 +172,6 @@ contract DarkMarketAuction is ERC721Holder, Ownable, Pausable, ReentrancyGuard {
         if (block.timestamp > auction.endTime - Extra_Time) {
             auction.endTime += Extra_Time;
             auction.status = AuctionStatus.ExtraTime;
-            emit ExtraTimeAdded(auctionId, msg.sender, auction.endTime);
         } else {
             auction.status = AuctionStatus.BidReceived;
         }
@@ -193,7 +191,7 @@ contract DarkMarketAuction is ERC721Holder, Ownable, Pausable, ReentrancyGuard {
         auction.highestBid = bidAmount;
         auction.bidderIncentive = incentiveAmount;
 
-        emit BidPlaced(auctionId, auction.highestBidder, auction.highestBid, auction.bidderIncentive);
+        emit BidPlaced(auctionId, auction.highestBidder, auction.highestBid, auction.bidderIncentive, auction.endTime);
     }
 
     /** Cancel Auction (Seller)
@@ -203,7 +201,7 @@ contract DarkMarketAuction is ERC721Holder, Ownable, Pausable, ReentrancyGuard {
     function cancelAuction(uint256 auctionId) public {
         Auction storage auction = auctions[auctionId];
         require(msg.sender == auction.seller || msg.sender == address(this), "Auctions can only be Cancelled by the Seller"); // Seller can cancel auction if no bids received or contract can finalize auction and cancel if no bids were received.
-        require(auction.status == AuctionStatus.Open, "Auction has received bids and cannot be canceled"); // If bids have been made on the auction it cannot be cancelled by the Seller
+        require(auction.status == AuctionStatus.Open || msg.sender == address(this), "Auction has received bids and cannot be canceled"); // If bids have been made on the auction it cannot be cancelled by the Seller
 
         // Transfer all tokens back to the seller
         for (uint i = 0; i < auction.tokens.length; i++) {
@@ -227,6 +225,11 @@ contract DarkMarketAuction is ERC721Holder, Ownable, Pausable, ReentrancyGuard {
 function finalizeAuction(uint256 auctionId) external nonReentrant whenNotPaused {
     Auction storage auction = auctions[auctionId];
     require(block.timestamp >= auction.endTime, "Auction has not Ended");
+
+    // If there are no bids, cancel the auction.
+    if (auction.highestBidder == address(0)) {
+        cancelAuction(auctionId);
+    }
 
     IERC20 bidToken = IERC20(auction.bidTokenAddress);
 
