@@ -4,15 +4,17 @@
   "description": "Solidity Code for Dark Market",
   "main": "index.js",
   "scripts": {
+    "docs": "solidity-docgen",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@openzeppelin/contracts": "^4.9.3",
+    "@openzeppelin/contracts": "5.0.0",
     "@prb/math": "^4.0.1",
     "dapp": "latest",
-    "prb-math": "^2.4.3"
+    "prb-math": "^2.4.3",
+    "solidity-docgen": "0.6.0-beta.36"
   }
 }
