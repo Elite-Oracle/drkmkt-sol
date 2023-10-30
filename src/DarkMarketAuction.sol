@@ -2,22 +2,26 @@
 pragma solidity ^0.8.20;
 
 // EXTERNAL IMPORTS
-import {ERC721Holder} from "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ERC721HolderUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/utils/ERC721HolderUpgradeable.sol";
+import {AccessManagedUpgradeable} from "@openzeppelin/contracts-upgradeable/access/manager/AccessManagedUpgradeable.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 // INTERNAL IMPORTS
 import {IDarkMarketAuction} from "./IDarkMarketAuction.sol";
+import {AddressBook} from "./lib/AddressBook.sol";
 
 /// @title DarkMarketAuction
 /// @author Elite Oracle | Kristian Peter
 /// @notice This contract allows users to start, bid, and finalize auctions for a variety of ERC tokens (digital assets)
 /// @custom:version 1.3.2
 /// @custom:release October 2023
-contract DarkMarketAuction is IDarkMarketAuction, ERC721Holder, Ownable, Pausable, ReentrancyGuard {
+contract DarkMarketAuction is IDarkMarketAuction, Initializable, ERC721HolderUpgradeable, AccessManagedUpgradeable,
+PausableUpgradeable, ReentrancyGuardUpgradeable {
 
     // =============== //
     // STATE VARIABLES //
@@ -28,7 +32,7 @@ contract DarkMarketAuction is IDarkMarketAuction, ERC721Holder, Ownable, Pausabl
      *******************/
 
     /// @inheritdoc nextAuctionId
-    uint256 public nextAuctionId = 1;
+    uint256 public nextAuctionId;
     /// @inheritdoc auctions
     mapping(uint256 => Auction) public auctions;
 
@@ -40,22 +44,41 @@ contract DarkMarketAuction is IDarkMarketAuction, ERC721Holder, Ownable, Pausabl
      *********************/
 
     /// @inheritdoc minAuctionDuration
-    uint32 public minAuctionDuration = 1 minutes;
+    uint32 public minAuctionDuration;
     /// @inheritdoc maxAuctionDuration
-    uint32 public maxAuctionDuration = 12 weeks;
+    uint32 public maxAuctionDuration;
     /// @inheritdoc warmUpTime
-    uint32 public warmUpTime = 0 minutes;
+    uint32 public warmUpTime;
     /// @inheritdoc extraTime
-    uint32 public extraTime = 0 minutes;
+    uint32 public extraTime;
     /// @inheritdoc maxIncentive
-    uint16 public maxIncentive = 12;
+    uint16 public maxIncentive;
     /// @inheritdoc maxPayment
-    uint16 public maxPayment = 1000;
+    uint16 public maxPayment;
     /// @inheritdoc maxAssets
-    uint16 public maxAssets = 20;
+    uint16 public maxAssets;
 
-
+    /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
+        _disableInitializers();
+    }
+
+    function initialize() initializer public {
+        __ERC721Holder_init();
+        __Pausable_init();
+        __AccessManaged_init(AddressBook.accessManager());
+        __UUPSUpgradeable_init();
+        __ReentrancyGuard_init();
+
+
+        nextAuctionId = 1;
+        minAuctionDuration = 1 minutes;
+        maxAuctionDuration = 12 weeks;
+        warmUpTime = 0 minutes;
+        extraTime = 0 minutes;
+        maxIncentive = 12;
+        maxPayment = 1000;
+        maxAssets = 20;
     }
 
     // ============================
@@ -203,7 +226,7 @@ contract DarkMarketAuction is IDarkMarketAuction, ERC721Holder, Ownable, Pausabl
     }
 
     /// @inheritdoc cancelSpecificAuction
-    function cancelSpecificAuction(uint256 auctionId) external onlyOwner {
+    function cancelSpecificAuction(uint256 auctionId) external restricted {
         if (auctionId >= nextAuctionId) revert InvalidAuction(auctionId);
         Auction storage auction = auctions[auctionId];
 
@@ -228,58 +251,58 @@ contract DarkMarketAuction is IDarkMarketAuction, ERC721Holder, Ownable, Pausabl
     }
 
     /// @inheritdoc _pause
-    function pause() external onlyOwner {
+    function pause() external restricted {
         _pause();
     }
 
     /// @inheritdoc _unpause
-    function unpause() external onlyOwner {
+    function unpause() external restricted {
         _unpause();
     }
 
     /// @inheritdoc setMinAuctionDuration
-    function setMinAuctionDuration(uint32 _duration) external onlyOwner {
+    function setMinAuctionDuration(uint32 _duration) external restricted {
         if (_duration < 1 minutes) revert InvalidAuctionDuration(_duration, 1 minutes, maxAuctionDuration);
         minAuctionDuration = _duration;
         emit MinAuctionDurationUpdated(_duration);
     }
 
     /// @inheritdoc setMaxAuctionDuration
-    function setMaxAuctionDuration(uint32 _duration) external onlyOwner {
+    function setMaxAuctionDuration(uint32 _duration) external restricted {
         if (_duration > 52 weeks) revert InvalidAuctionDuration(_duration, minAuctionDuration, 52 weeks);
         maxAuctionDuration = _duration;
         emit MaxAuctionDurationUpdated(_duration);
     }
 
     /// @inheritdoc setMaxAssets
-    function setMaxAssets(uint16 _assets) external onlyOwner {
+    function setMaxAssets(uint16 _assets) external restricted {
         if (_assets > 100) revert InvalidAAssetCount(_assets, 100);
         maxAssets = _assets;
         emit MaxAssetsUpdated(_assets);
     }
 
     /// @inheritdoc setMaxIncentive
-    function setMaxIncentive(uint16 _incentive) external onlyOwner {
+    function setMaxIncentive(uint16 _incentive) external restricted {
         if (_incentive >= 100) revert IncentiveTooHigh(_assets, 99);
         maxIncentive = _incentive;
         emit MaxIncentiveUpdated(_incentive);
     }
 
     /// @inheritdoc setWarmUpTime
-    function setWarmUpTime(uint32 _warmUp) external onlyOwner {
+    function setWarmUpTime(uint32 _warmUp) external restricted {
         warmUpTime = _warmUp;
         emit WarmUpTimeUpdated(_warmUp);
     }
 
     /// @inheritdoc setExtraTime
-    function setExtraTime(uint32 _extraTime) external onlyOwner {
+    function setExtraTime(uint32 _extraTime) external restricted {
         if (_extraTime > 12 hours) revert InvalidExtraTime(_extraTime, 12 hours);
         extraTime = _extraTime;
         emit ExtraTimeUpdated(_extraTime);
     }
 
     /// @inheritdoc setMaxPayment
-    function setMaxPayment(uint16 _maxPmt) external onlyOwner {
+    function setMaxPayment(uint16 _maxPmt) external restricted {
         require(_maxPmt <= 1000, "Fees must be below 10%");
         maxPayment = _maxPmt;
         emit MaxPaymentUpdated(_maxPmt);
@@ -327,4 +350,6 @@ contract DarkMarketAuction is IDarkMarketAuction, ERC721Holder, Ownable, Pausabl
             pendingWithdrawals[to].tokenAddress = address(token);
         }
     }
+
+    function _authorizeUpgrade(address newImplementation) internal restricted override {}
 }
