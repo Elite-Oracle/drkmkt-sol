@@ -6,6 +6,7 @@ import {ERC721HolderUpgradeable} from "@openzeppelin/contracts-upgradeable/token
 import {AccessManagedUpgradeable} from "@openzeppelin/contracts-upgradeable/access/manager/AccessManagedUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
@@ -20,7 +21,7 @@ import {AddressBook} from "./lib/AddressBook.sol";
 /// @notice This contract allows users to start, bid, and finalize auctions for a variety of ERC tokens (digital assets)
 /// @custom:version 1.3.2
 /// @custom:release October 2023
-contract DarkMarketAuction is IDarkMarketAuction, Initializable, ERC721HolderUpgradeable, AccessManagedUpgradeable,
+contract DarkMarketAuction is IDarkMarketAuction, Initializable, ERC721HolderUpgradeable, AccessManagedUpgradeable, OwnableUpgradeable, UUPSUpgradeable, 
 PausableUpgradeable, ReentrancyGuardUpgradeable {
 
     // =============== //
@@ -31,31 +32,31 @@ PausableUpgradeable, ReentrancyGuardUpgradeable {
      * Auction-related *
      *******************/
 
-    /// @inheritdoc nextAuctionId
+    /// @inheritdoc IDarkMarketAuction
     uint256 public nextAuctionId;
-    /// @inheritdoc auctions
+    /// @inheritdoc IDarkMarketAuction
     mapping(uint256 => Auction) public auctions;
 
-    /// @inheritdoc pendingWithdrawals
+    /// @inheritdoc IDarkMarketAuction
     mapping(address => PendingWithdrawal) public pendingWithdrawals;
 
     /*********************
      * Parameter-related *
      *********************/
 
-    /// @inheritdoc minAuctionDuration
+    /// @inheritdoc IDarkMarketAuction
     uint32 public minAuctionDuration;
-    /// @inheritdoc maxAuctionDuration
+    /// @inheritdoc IDarkMarketAuction
     uint32 public maxAuctionDuration;
-    /// @inheritdoc warmUpTime
+    /// @inheritdoc IDarkMarketAuction
     uint32 public warmUpTime;
-    /// @inheritdoc extraTime
+    /// @inheritdoc IDarkMarketAuction
     uint32 public extraTime;
-    /// @inheritdoc maxIncentive
+    /// @inheritdoc IDarkMarketAuction
     uint16 public maxIncentive;
-    /// @inheritdoc maxPayment
+    /// @inheritdoc IDarkMarketAuction
     uint16 public maxPayment;
-    /// @inheritdoc maxAssets
+    /// @inheritdoc IDarkMarketAuction
     uint16 public maxAssets;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -69,6 +70,7 @@ PausableUpgradeable, ReentrancyGuardUpgradeable {
         __AccessManaged_init(AddressBook.accessManager());
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
+        __Ownable_init();
 
 
         nextAuctionId = 1;
@@ -85,7 +87,7 @@ PausableUpgradeable, ReentrancyGuardUpgradeable {
     // AUCTION FUNCTIONS
     // ============================
 
-    /// @inheritdoc startAuction
+    /// @inheritdoc IDarkMarketAuction
     function startAuction(
         uint256 startPrice,
         uint32 duration,
@@ -121,7 +123,7 @@ PausableUpgradeable, ReentrancyGuardUpgradeable {
         return nextAuctionId - 1;
     }
 
-    /// @inheritdoc bid
+    /// @inheritdoc IDarkMarketAuction
     function bid(uint256 auctionId, uint256 bidAmount, uint256 incentiveAmount) external nonReentrant whenNotPaused {
         Auction storage auction = auctions[auctionId];
 
@@ -159,7 +161,7 @@ PausableUpgradeable, ReentrancyGuardUpgradeable {
         emit BidPlaced(auctionId, auction.highestBidder, auction.highestBid, auction.bidderIncentive, auction.endTime);
     }
 
-    /// @inheritdoc finalizeAuction
+    /// @inheritdoc IDarkMarketAuction
     function finalizeAuction(uint256 auctionId) external nonReentrant whenNotPaused {
         Auction storage auction = auctions[auctionId];
         if (block.timestamp < auction.endTime) revert AuctionNotEnded(block.timestamp, auction.endTime);
@@ -212,7 +214,7 @@ PausableUpgradeable, ReentrancyGuardUpgradeable {
         }
     }
 
-    /// @inheritdoc withdrawPending
+    /// @inheritdoc IDarkMarketAuction
     function withdrawPending() external {
         uint256 amount = pendingWithdrawals[msg.sender].amount;
         address tokenAddress = pendingWithdrawals[msg.sender].tokenAddress;
@@ -225,7 +227,7 @@ PausableUpgradeable, ReentrancyGuardUpgradeable {
         IERC20(tokenAddress).transfer(msg.sender, amount);
     }
 
-    /// @inheritdoc cancelSpecificAuction
+    /// @inheritdoc IDarkMarketAuction
     function cancelSpecificAuction(uint256 auctionId) external restricted {
         if (auctionId >= nextAuctionId) revert InvalidAuction(auctionId);
         Auction storage auction = auctions[auctionId];
@@ -250,75 +252,75 @@ PausableUpgradeable, ReentrancyGuardUpgradeable {
         emit AuctionCancelled(auctionId);
     }
 
-    /// @inheritdoc _pause
+    /// @inheritdoc IDarkMarketAuction
     function pause() external restricted {
         _pause();
     }
 
-    /// @inheritdoc _unpause
+    /// @inheritdoc IDarkMarketAuction
     function unpause() external restricted {
         _unpause();
     }
 
-    /// @inheritdoc setMinAuctionDuration
+    /// @inheritdoc IDarkMarketAuction
     function setMinAuctionDuration(uint32 _duration) external restricted {
         if (_duration < 1 minutes) revert InvalidAuctionDuration(_duration, 1 minutes, maxAuctionDuration);
         minAuctionDuration = _duration;
         emit MinAuctionDurationUpdated(_duration);
     }
 
-    /// @inheritdoc setMaxAuctionDuration
+    /// @inheritdoc IDarkMarketAuction
     function setMaxAuctionDuration(uint32 _duration) external restricted {
         if (_duration > 52 weeks) revert InvalidAuctionDuration(_duration, minAuctionDuration, 52 weeks);
         maxAuctionDuration = _duration;
         emit MaxAuctionDurationUpdated(_duration);
     }
 
-    /// @inheritdoc setMaxAssets
+    /// @inheritdoc IDarkMarketAuction
     function setMaxAssets(uint16 _assets) external restricted {
         if (_assets > 100) revert InvalidAAssetCount(_assets, 100);
         maxAssets = _assets;
         emit MaxAssetsUpdated(_assets);
     }
 
-    /// @inheritdoc setMaxIncentive
+    /// @inheritdoc IDarkMarketAuction
     function setMaxIncentive(uint16 _incentive) external restricted {
-        if (_incentive >= 100) revert IncentiveTooHigh(_assets, 99);
+        if (_incentive >= 100) revert IncentiveTooHigh(_incentive, 99);
         maxIncentive = _incentive;
         emit MaxIncentiveUpdated(_incentive);
     }
 
-    /// @inheritdoc setWarmUpTime
+    /// @inheritdoc IDarkMarketAuction
     function setWarmUpTime(uint32 _warmUp) external restricted {
         warmUpTime = _warmUp;
         emit WarmUpTimeUpdated(_warmUp);
     }
 
-    /// @inheritdoc setExtraTime
+    /// @inheritdoc IDarkMarketAuction
     function setExtraTime(uint32 _extraTime) external restricted {
         if (_extraTime > 12 hours) revert InvalidExtraTime(_extraTime, 12 hours);
         extraTime = _extraTime;
         emit ExtraTimeUpdated(_extraTime);
     }
 
-    /// @inheritdoc setMaxPayment
+    /// @inheritdoc IDarkMarketAuction
     function setMaxPayment(uint16 _maxPmt) external restricted {
         require(_maxPmt <= 1000, "Fees must be below 10%");
         maxPayment = _maxPmt;
         emit MaxPaymentUpdated(_maxPmt);
     }
 
-    /// @inheritdoc getAuctionStatus
+    /// @inheritdoc IDarkMarketAuction
     function getAuctionStatus(uint256 auctionId) external view returns (AuctionStatus) {
         return auctions[auctionId].status;
     }
 
-    /// @inheritdoc getAuctionEndTime
+    /// @inheritdoc IDarkMarketAuction
     function getAuctionEndTime(uint256 auctionId) external view returns (uint32) {
         return auctions[auctionId].endTime;
     }
 
-    /// @inheritdoc cancelAuction
+    /// @inheritdoc IDarkMarketAuction
     function cancelAuction(uint256 auctionId) public {
         Auction storage auction = auctions[auctionId];
         if (msg.sender != auction.seller) revert NotAuctionSeller(auction.seller, msg.sender);
@@ -340,7 +342,7 @@ PausableUpgradeable, ReentrancyGuardUpgradeable {
         emit AuctionCancelled(auctionId);
     }
 
-    /// @inheritdoc safeTransfer
+    /// @inheritdoc IDarkMarketAuction
     function safeTransfer(IERC20 token, address to, uint256 amount) internal {
         try token.transfer(to, amount) {
             // Transfer successful

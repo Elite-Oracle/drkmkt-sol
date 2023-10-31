@@ -23,10 +23,10 @@ interface IDarkMarketAuction is IDarkMarketAuctionStructures {
     function nextAuctionId() external returns (uint256);
 
     /// @notice Mapping from auction ID to its details
-    function auctions(uint256 auctionId) external returns (Auction);
+    function auctions(uint256 auctionId) external returns (Auction memory);
 
     /// @notice Failed transfers
-    function pendingWithdrawals(address wallet) external returns (PendingWithdrawal);
+    function pendingWithdrawals(address wallet) external returns (PendingWithdrawal memory);
 
     /*********************
      * Parameter-related *
