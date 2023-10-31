@@ -133,7 +133,7 @@ interface IDarkMarketAuction is IDarkMarketAuctionStructures {
     /// @notice Attempt to withdraw without fee token having been set
     error FeeTokenNotConfigured();
     /// @notice Extra time is too long
-    error InvalidExtraTime(uint256 extraTime, address max);
+    error InvalidExtraTime(uint256 extraTime, uint256 max);
 
     // ================= //
     // AUCTION FUNCTIONS //

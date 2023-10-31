@@ -70,7 +70,7 @@ PausableUpgradeable, ReentrancyGuardUpgradeable {
         __AccessManaged_init(AddressBook.accessManager());
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
-        __Ownable_init();
+        __Ownable_init(AddressBook.accessManager());
 
 
         nextAuctionId = 1;
