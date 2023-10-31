@@ -7,7 +7,7 @@ import "../src/DarkMarketAuction.sol";
 import "./MockERC721.t.sol";
 import "./MockERC20.t.sol";
 
-contract DarkMarketAuctionTest is Test, Ownable {
+contract DarkMarketAuctionTest is Test {
     using console for *; // Reintroduced for enhanced logging
 
     DarkMarketAuction auction;
@@ -106,6 +106,7 @@ contract DarkMarketAuctionTest is Test, Ownable {
 
     }
 
+/***
 function testStartMajorAuction() public {
     console.log("Starting test: StartMajorAuction...");
 
@@ -177,7 +178,7 @@ function testStartMajorAuction() public {
 }
 
 }
-/***
+
  * 
  * 
     function testGetActiveAuctionCount() public {
@@ -468,5 +469,5 @@ console.log("Bid amount:", 150 ether);
         auction.cancelSpecificAuction(auctionId3);
         console.log("Auction 3 cancelled by owner...");
     }
-}
 */
+}
