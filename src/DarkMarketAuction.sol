@@ -13,7 +13,7 @@ import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 // INTERNAL IMPORTS
-import {IDarkMarketAuction} from "./IDarkMarketAuction.sol";
+import {IDarkMarketAuction} from "./interfaces/IDarkMarketAuction.sol";
 import {AddressBook} from "./lib/AddressBook.sol";
 
 /// @title DarkMarketAuction
@@ -21,50 +21,91 @@ import {AddressBook} from "./lib/AddressBook.sol";
 /// @notice This contract allows users to start, bid, and finalize auctions for a variety of ERC tokens (digital assets)
 /// @custom:version 1.3.2
 /// @custom:release October 2023
-contract DarkMarketAuction is IDarkMarketAuction, Initializable, ERC721HolderUpgradeable, AccessManagedUpgradeable, OwnableUpgradeable, UUPSUpgradeable, 
-PausableUpgradeable, ReentrancyGuardUpgradeable {
-
-    // =============== //
-    // STATE VARIABLES //
-    // =============== //
+contract DarkMarketAuction is
+    IDarkMarketAuction,
+    Initializable,
+    ERC721HolderUpgradeable,
+    AccessManagedUpgradeable,
+    OwnableUpgradeable,
+    UUPSUpgradeable,
+    PausableUpgradeable,
+    ReentrancyGuardUpgradeable
+{
+    // =========================== //
+    // STATE VARIABLES             //
+    // All Inheritied By Interface //
+    // =========================== //
 
     /*******************
      * Auction-related *
      *******************/
 
+    uint256 private _nextAuctionId;
     /// @inheritdoc IDarkMarketAuction
-    uint256 public nextAuctionId;
-    /// @inheritdoc IDarkMarketAuction
-    mapping(uint256 => Auction) public auctions;
+    function nextAuctionId() external view override returns (uint256) {
+        return _nextAuctionId;
+    }
 
-    /// @inheritdoc IDarkMarketAuction
-    mapping(address => PendingWithdrawal) public pendingWithdrawals;
+    mapping(uint256 => Auction) private _auctions;
+
+    function auctions(
+        uint256 auctionId
+    ) external view override returns (Auction memory) {
+        return _auctions[auctionId];
+    }
 
     /*********************
      * Parameter-related *
      *********************/
 
+    uint256 private _minAuctionDuration;
     /// @inheritdoc IDarkMarketAuction
-    uint32 public minAuctionDuration;
-    /// @inheritdoc IDarkMarketAuction
-    uint32 public maxAuctionDuration;
-    /// @inheritdoc IDarkMarketAuction
-    uint32 public warmUpTime;
-    /// @inheritdoc IDarkMarketAuction
-    uint32 public extraTime;
-    /// @inheritdoc IDarkMarketAuction
-    uint16 public maxIncentive;
-    /// @inheritdoc IDarkMarketAuction
-    uint16 public maxPayment;
-    /// @inheritdoc IDarkMarketAuction
-    uint16 public maxAssets;
+    function minAuctionDuration() external view override returns (uint256) {
+        return _minAuctionDuration;
+    }
+
+    uint256 private _maxAuctionDuration;
+
+    function maxAuctionDuration() external view override returns (uint256) {
+        return _maxAuctionDuration;
+    }
+
+    uint256 private _warmUpTime;
+
+    function warmUpTime() external view override returns (uint256) {
+        return _warmUpTime;
+    }
+
+    uint32 private _extraTime;
+
+    function extraTime() external view override returns (uint32) {
+        return _extraTime;
+    }
+
+    uint256 private _maxIncentive;
+
+    function maxIncentive() external view override returns (uint256) {
+        return _maxIncentive;
+    }
+
+    uint256 private _maxPayment;
+
+    function maxPayment() external view override returns (uint256) {
+        return _maxPayment;
+    }
+
+    uint256 private _maxAssets;
+
+    function maxAssets() external view override returns (uint256) {
+        return _maxAssets;
+    }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
 
-    function initialize() initializer public {
+    function initialize() public initializer {
         __ERC721Holder_init();
         __Pausable_init();
         __AccessManaged_init(AddressBook.accessManager());
@@ -72,15 +113,14 @@ PausableUpgradeable, ReentrancyGuardUpgradeable {
         __ReentrancyGuard_init();
         __Ownable_init(AddressBook.accessManager());
 
-
-        nextAuctionId = 1;
-        minAuctionDuration = 1 minutes;
-        maxAuctionDuration = 12 weeks;
-        warmUpTime = 0 minutes;
-        extraTime = 0 minutes;
-        maxIncentive = 12;
-        maxPayment = 1000;
-        maxAssets = 20;
+        _nextAuctionId = 1;
+        _minAuctionDuration = 1 minutes;
+        _maxAuctionDuration = 12 weeks;
+        _warmUpTime = 0 minutes;
+        _extraTime = 0 minutes;
+        _maxIncentive = 12;
+        _maxPayment = 1000;
+        _maxAssets = 20;
     }
 
     // ============================
@@ -95,14 +135,21 @@ PausableUpgradeable, ReentrancyGuardUpgradeable {
         address ERC20forBidding,
         FeeDetail memory _fees
     ) external whenNotPaused returns (uint256) {
-        if (_tokens.length == 0 || _tokens.length > maxAssets) revert InvalidAAssetCount(_tokens.length, maxAssets);
-        if (duration < minAuctionDuration || duration > maxAuctionDuration)
-            revert InvalidAuctionDuration(duration, minAuctionDuration, maxAuctionDuration);
-        if (_fees.contractFee > maxPayment) revert InvalidAuctionFeePercentage(_fees.contractFee, maxPayment);
-        if (_fees.royaltyFee > maxPayment) revert InvalidAuctionFeePercentage(_fees.royaltyFee, maxPayment);
+        if (_tokens.length == 0 || _tokens.length > _maxAssets)
+            revert InvalidAAssetCount(_tokens.length, _maxAssets);
+        if (duration < _minAuctionDuration || duration > _maxAuctionDuration)
+            revert InvalidAuctionDuration(
+                duration,
+                _minAuctionDuration,
+                _maxAuctionDuration
+            );
+        if (_fees.contractFee > _maxPayment)
+            revert InvalidAuctionFeePercentage(_fees.contractFee, _maxPayment);
+        if (_fees.royaltyFee > _maxPayment)
+            revert InvalidAuctionFeePercentage(_fees.royaltyFee, _maxPayment);
 
         // Initialize a new auction
-        Auction storage newAuction = auctions[nextAuctionId];
+        Auction storage newAuction = _auctions[_nextAuctionId];
         newAuction.seller = payable(msg.sender);
         newAuction.startTime = uint32(block.timestamp);
         newAuction.endTime = uint32(block.timestamp + duration);
@@ -113,42 +160,63 @@ PausableUpgradeable, ReentrancyGuardUpgradeable {
 
         // Transfer each ERC721 token to the contract
         for (uint i = 0; i < _tokens.length; i++) {
-            IERC721(_tokens[i].tokenAddress).safeTransferFrom(msg.sender, address(this), _tokens[i].tokenId);
+            IERC721(_tokens[i].tokenAddress).safeTransferFrom(
+                msg.sender,
+                address(this),
+                _tokens[i].tokenId
+            );
             newAuction.tokens.push(_tokens[i]);
         }
 
-        emit AuctionStarted(nextAuctionId, msg.sender, startPrice, newAuction.endTime);
-        nextAuctionId++;
+        emit AuctionStarted(
+            _nextAuctionId,
+            msg.sender,
+            startPrice,
+            newAuction.endTime
+        );
+        _nextAuctionId++;
 
-        return nextAuctionId - 1;
+        return _nextAuctionId - 1;
     }
 
     /// @inheritdoc IDarkMarketAuction
-    function bid(uint256 auctionId, uint256 bidAmount, uint256 incentiveAmount) external nonReentrant whenNotPaused {
-        Auction storage auction = auctions[auctionId];
+    function bid(
+        uint256 auctionId,
+        uint256 bidAmount,
+        uint256 incentiveAmount
+    ) external nonReentrant whenNotPaused {
+        Auction storage auction = _auctions[auctionId];
 
-        if (block.timestamp > auction.endTime) revert AuctionEnded(block.timestamp, auction.endTime);
-        if (bidAmount <= auction.highestBid) revert BidTooLow(bidAmount, auction.highestBid);
-        if (incentiveAmount > maxIncentive * bidAmount / 100)
-            revert IncentiveTooHigh(incentiveAmount, maxIncentive);
+        if (block.timestamp > auction.endTime)
+            revert AuctionEnded(block.timestamp, auction.endTime);
+        if (bidAmount <= auction.highestBid)
+            revert BidTooLow(bidAmount, auction.highestBid);
+        if (incentiveAmount > (_maxIncentive * bidAmount) / 100)
+            revert IncentiveTooHigh(incentiveAmount, _maxIncentive);
 
         IERC20 bidToken = IERC20(auction.bidTokenAddress);
         bidToken.transferFrom(msg.sender, address(this), bidAmount);
 
         // Check for extra time condition
-        if (block.timestamp > auction.endTime - extraTime) {
-            auction.endTime += extraTime;
+        if (block.timestamp > auction.endTime - _extraTime) {
+            auction.endTime += _extraTime;
             auction.status = AuctionStatus.ExtraTime;
         } else {
             auction.status = AuctionStatus.BidReceived;
         }
 
         // Refund previous bidder if applicable
-        if (auction.highestBidder != address(0) && block.timestamp >= auction.startTime + warmUpTime) {
+        if (
+            auction.highestBidder != address(0) &&
+            block.timestamp >= auction.startTime + _warmUpTime
+        ) {
             uint256 refundAmount = auction.highestBid + auction.bidderIncentive;
             bidToken.transfer(auction.highestBidder, refundAmount);
             auction.totalIncentives += incentiveAmount;
-            emit IncentiveReceived(auction.highestBidder, auction.bidderIncentive);
+            emit IncentiveReceived(
+                auction.highestBidder,
+                auction.bidderIncentive
+            );
         } else if (auction.highestBidder != address(0)) {
             bidToken.transfer(auction.highestBidder, auction.highestBid);
         }
@@ -158,13 +226,22 @@ PausableUpgradeable, ReentrancyGuardUpgradeable {
         auction.highestBid = bidAmount;
         auction.bidderIncentive = incentiveAmount;
 
-        emit BidPlaced(auctionId, auction.highestBidder, auction.highestBid, auction.bidderIncentive, auction.endTime);
+        emit BidPlaced(
+            auctionId,
+            auction.highestBidder,
+            auction.highestBid,
+            auction.bidderIncentive,
+            auction.endTime
+        );
     }
 
     /// @inheritdoc IDarkMarketAuction
-    function finalizeAuction(uint256 auctionId) external nonReentrant whenNotPaused {
-        Auction storage auction = auctions[auctionId];
-        if (block.timestamp < auction.endTime) revert AuctionNotEnded(block.timestamp, auction.endTime);
+    function finalizeAuction(
+        uint256 auctionId
+    ) external nonReentrant whenNotPaused {
+        Auction storage auction = _auctions[auctionId];
+        if (block.timestamp < auction.endTime)
+            revert AuctionNotEnded(block.timestamp, auction.endTime);
 
         // If there are no bids, cancel the auction.
         if (auction.highestBidder == address(0)) {
@@ -175,9 +252,14 @@ PausableUpgradeable, ReentrancyGuardUpgradeable {
 
         // If the caller is the seller or the owner
         if (msg.sender == auction.seller) {
-            uint256 fee = auction.highestBid * (auction.fees.contractFee / 10000);
-            uint256 royalty = auction.highestBid * (auction.fees.royaltyFee / 10000);
-            uint256 sellerAmount = auction.highestBid - fee - royalty - auction.totalIncentives;
+            uint256 fee = auction.highestBid *
+                (auction.fees.contractFee / 10000);
+            uint256 royalty = auction.highestBid *
+                (auction.fees.royaltyFee / 10000);
+            uint256 sellerAmount = auction.highestBid -
+                fee -
+                royalty -
+                auction.totalIncentives;
 
             // Safely transfer winning bid to Seller minus incentives and fees
             safeTransfer(bidToken, auction.seller, sellerAmount);
@@ -196,13 +278,19 @@ PausableUpgradeable, ReentrancyGuardUpgradeable {
                 );
             }
 
-            emit BidderFinalized(auctionId, auction.highestBidder, auction.highestBid);
+            emit BidderFinalized(
+                auctionId,
+                auction.highestBidder,
+                auction.highestBid
+            );
         }
 
         // If the caller is the owner
         if (msg.sender == owner()) {
-            uint256 fee = auction.highestBid * (auction.fees.contractFee / 10000);
-            uint256 royalty = auction.highestBid * (auction.fees.royaltyFee / 10000);
+            uint256 fee = auction.highestBid *
+                (auction.fees.contractFee / 10000);
+            uint256 royalty = auction.highestBid *
+                (auction.fees.royaltyFee / 10000);
 
             // Safely transfer Fees to Owner
             safeTransfer(bidToken, owner(), fee);
@@ -210,27 +298,20 @@ PausableUpgradeable, ReentrancyGuardUpgradeable {
             // Safely transfer Royalty Fees to Creator
             safeTransfer(bidToken, auction.fees.royaltyAddress, royalty);
 
-            emit OwnerFinalized(auctionId, owner(), fee, auction.fees.royaltyAddress, royalty);
+            emit OwnerFinalized(
+                auctionId,
+                owner(),
+                fee,
+                auction.fees.royaltyAddress,
+                royalty
+            );
         }
     }
 
     /// @inheritdoc IDarkMarketAuction
-    function withdrawPending() external {
-        uint256 amount = pendingWithdrawals[msg.sender].amount;
-        address tokenAddress = pendingWithdrawals[msg.sender].tokenAddress;
-        if (amount == 0) revert NoFeesRemaining();
-        if (tokenAddress == address(0)) revert FeeTokenNotConfigured();
-
-        pendingWithdrawals[msg.sender].amount = 0;
-        pendingWithdrawals[msg.sender].tokenAddress = address(0);
-
-        IERC20(tokenAddress).transfer(msg.sender, amount);
-    }
-
-    /// @inheritdoc IDarkMarketAuction
     function cancelSpecificAuction(uint256 auctionId) external restricted {
-        if (auctionId >= nextAuctionId) revert InvalidAuction(auctionId);
-        Auction storage auction = auctions[auctionId];
+        if (auctionId >= _nextAuctionId) revert InvalidAuction(auctionId);
+        Auction storage auction = _auctions[auctionId];
 
         if (auction.highestBidder != address(0)) {
             IERC20(auction.bidTokenAddress).transfer(
@@ -253,79 +334,87 @@ PausableUpgradeable, ReentrancyGuardUpgradeable {
     }
 
     /// @inheritdoc IDarkMarketAuction
-    function pause() external restricted {
-        _pause();
-    }
-
-    /// @inheritdoc IDarkMarketAuction
-    function unpause() external restricted {
-        _unpause();
-    }
-
-    /// @inheritdoc IDarkMarketAuction
     function setMinAuctionDuration(uint32 _duration) external restricted {
-        if (_duration < 1 minutes) revert InvalidAuctionDuration(_duration, 1 minutes, maxAuctionDuration);
-        minAuctionDuration = _duration;
+        if (_duration < 1 minutes)
+            revert InvalidAuctionDuration(
+                _duration,
+                1 minutes,
+                _maxAuctionDuration
+            );
+        _minAuctionDuration = _duration;
         emit MinAuctionDurationUpdated(_duration);
     }
 
     /// @inheritdoc IDarkMarketAuction
     function setMaxAuctionDuration(uint32 _duration) external restricted {
-        if (_duration > 52 weeks) revert InvalidAuctionDuration(_duration, minAuctionDuration, 52 weeks);
-        maxAuctionDuration = _duration;
+        if (_duration > 52 weeks)
+            revert InvalidAuctionDuration(
+                _duration,
+                _minAuctionDuration,
+                52 weeks
+            );
+        _maxAuctionDuration = _duration;
         emit MaxAuctionDurationUpdated(_duration);
     }
 
     /// @inheritdoc IDarkMarketAuction
     function setMaxAssets(uint16 _assets) external restricted {
         if (_assets > 100) revert InvalidAAssetCount(_assets, 100);
-        maxAssets = _assets;
+        _maxAssets = _assets;
         emit MaxAssetsUpdated(_assets);
     }
 
     /// @inheritdoc IDarkMarketAuction
     function setMaxIncentive(uint16 _incentive) external restricted {
         if (_incentive >= 100) revert IncentiveTooHigh(_incentive, 99);
-        maxIncentive = _incentive;
+        _maxIncentive = _incentive;
         emit MaxIncentiveUpdated(_incentive);
     }
 
     /// @inheritdoc IDarkMarketAuction
     function setWarmUpTime(uint32 _warmUp) external restricted {
-        warmUpTime = _warmUp;
+        _warmUpTime = _warmUp;
         emit WarmUpTimeUpdated(_warmUp);
     }
 
     /// @inheritdoc IDarkMarketAuction
-    function setExtraTime(uint32 _extraTime) external restricted {
-        if (_extraTime > 12 hours) revert InvalidExtraTime(_extraTime, 12 hours);
-        extraTime = _extraTime;
+    function setExtraTime(uint32 _extTime) external restricted {
+        if (_extTime > 12 hours) revert InvalidExtraTime(_extTime, 12 hours);
+
+        _extraTime = _extTime;
         emit ExtraTimeUpdated(_extraTime);
     }
 
     /// @inheritdoc IDarkMarketAuction
     function setMaxPayment(uint16 _maxPmt) external restricted {
         require(_maxPmt <= 1000, "Fees must be below 10%");
-        maxPayment = _maxPmt;
+        _maxPayment = _maxPmt;
         emit MaxPaymentUpdated(_maxPmt);
     }
 
     /// @inheritdoc IDarkMarketAuction
-    function getAuctionStatus(uint256 auctionId) external view returns (AuctionStatus) {
-        return auctions[auctionId].status;
+    function getAuctionStatus(
+        uint256 auctionId
+    ) external view returns (AuctionStatus) {
+        return _auctions[auctionId].status;
     }
 
     /// @inheritdoc IDarkMarketAuction
-    function getAuctionEndTime(uint256 auctionId) external view returns (uint32) {
-        return auctions[auctionId].endTime;
+    function getAuctionEndTime(
+        uint256 auctionId
+    ) external view returns (uint32) {
+        return _auctions[auctionId].endTime;
     }
 
     /// @inheritdoc IDarkMarketAuction
     function cancelAuction(uint256 auctionId) public {
-        Auction storage auction = auctions[auctionId];
-        if (msg.sender != auction.seller) revert NotAuctionSeller(auction.seller, msg.sender);
-        if (auction.status == AuctionStatus.Cancelled || auction.status == AuctionStatus.Closed)
-            revert AuctionEnded(block.timestamp, auction.endTime);
+        Auction storage auction = _auctions[auctionId];
+        if (msg.sender != auction.seller)
+            revert NotAuctionSeller(auction.seller, msg.sender);
+        if (
+            auction.status == AuctionStatus.Cancelled ||
+            auction.status == AuctionStatus.Closed
+        ) revert AuctionEnded(block.timestamp, auction.endTime);
         if (auction.status != AuctionStatus.Open) revert AuctionHasBids();
 
         // Transfer all tokens back to the seller
@@ -342,16 +431,29 @@ PausableUpgradeable, ReentrancyGuardUpgradeable {
         emit AuctionCancelled(auctionId);
     }
 
-    /// @inheritdoc IDarkMarketAuction
+
     function safeTransfer(IERC20 token, address to, uint256 amount) internal {
         try token.transfer(to, amount) {
             // Transfer successful
         } catch {
-            // If transfer fails, add to pending withdrawals
-            pendingWithdrawals[to].amount += amount;
-            pendingWithdrawals[to].tokenAddress = address(token);
+            // If transfer fails, revert to allow new attempted transfer to occur
+            revert();
         }
     }
 
-    function _authorizeUpgrade(address newImplementation) internal restricted override {}
+    // @dev Pause the contract
+    function pause() external restricted {
+        _pause();
+    }
+
+    // @dev UnPause (resume) the contract
+    function unpause() external restricted {
+        _unpause();
+    }
+
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override restricted {}
+
+    function withdrawPending() external override {}
 }

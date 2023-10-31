@@ -25,9 +25,6 @@ interface IDarkMarketAuction is IDarkMarketAuctionStructures {
     /// @notice Mapping from auction ID to its details
     function auctions(uint256 auctionId) external returns (Auction memory);
 
-    /// @notice Failed transfers
-    function pendingWithdrawals(address wallet) external returns (PendingWithdrawal memory);
-
     /*********************
      * Parameter-related *
      *********************/
@@ -43,7 +40,7 @@ interface IDarkMarketAuction is IDarkMarketAuctionStructures {
 
     /// @notice Extra time added to the auction if a bid is placed in the last minutes of the bidding. This helps prevent
     ///         auction sniping and gives other participants a chance to place their bids.
-    function extraTime() external returns (uint256);
+    function extraTime() external returns (uint32);
 
     /// @notice Maximum bidder incentive in percentage (12%)
     function maxIncentive() external returns (uint256);
@@ -133,7 +130,7 @@ interface IDarkMarketAuction is IDarkMarketAuctionStructures {
     /// @notice Attempt to withdraw without fee token having been set
     error FeeTokenNotConfigured();
     /// @notice Extra time is too long
-    error InvalidExtraTime(uint256 extraTime, uint256 max);
+    error InvalidExtraTime(uint32 extraTime, uint32 max);
 
     // ================= //
     // AUCTION FUNCTIONS //
