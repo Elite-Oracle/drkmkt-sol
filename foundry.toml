@@ -4,6 +4,9 @@ out = "out"
 libs = ["lib"]
 verbosity = 5
 
+remappings = ["@openzeppelin/=lib/openzeppelin-contracts/"]
+
+
 [fuzz]
 target = "./fuzz/DarkMarketFuzz.t.sol"
 runs = 1000
