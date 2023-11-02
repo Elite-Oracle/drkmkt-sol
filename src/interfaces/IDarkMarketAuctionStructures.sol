@@ -17,13 +17,18 @@ interface IDarkMarketAuctionStructures {
         Cancelled
     }
 
-    /// @notice Represents the Contract Address and Token ID for every ERC721 token
-    /// @custom:member address tokenAddress The address of the ERC721 token
-    /// @custom:member uint256 tokenId The ID of the ERC721 token
+    /// @notice Represents the Contract Address, Token ID, and additional details for every token (ERC721 or ERC1155)
+    /// @custom:member address tokenAddress The address of the token (ERC721 or ERC1155)
+    /// @custom:member uint256 tokenId The ID of the token
+    /// @custom:member uint256 tokenQuantity The quantity of the token (relevant for ERC1155)
+    /// @custom:member bool isERC1155 A flag to indicate if the token is ERC1155 (true) or ERC721 (false)
     struct TokenDetail {
-        address tokenAddress;
-        uint256 tokenId;
+    address tokenAddress;
+    uint256 tokenId;
+    uint256 tokenQuantity;
+    bool isERC1155;
     }
+
 
     /// @notice Represents the Contract Fees for every auction
     /// @custom:member uint256 contractFee The fee charged for the auction
@@ -61,11 +66,4 @@ interface IDarkMarketAuctionStructures {
         FeeDetail fees;
     }
 
-    /// @notice Mapping to store both amount and ERC20 token address in the case of a Failed Transaction
-    /// @custom:member uint256 amount The amount of ERC20 tokens
-    /// @custom:member address tokenAddress The address of the ERC20 token
-    struct PendingWithdrawal {
-        uint256 amount;
-        address tokenAddress;
-    }
 }

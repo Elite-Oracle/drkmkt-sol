@@ -4,7 +4,7 @@ out = "out"
 libs = ["lib"]
 verbosity = 5
 
-remappings = ["@openzeppelin/=lib/openzeppelin-contracts"]
+remappings = ["@openzeppelin/=node_modules/@openzeppelin"]
 
 [fuzz]
 target = "./fuzz/DarkMarketFuzz.t.sol"

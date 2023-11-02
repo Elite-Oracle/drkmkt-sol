@@ -2,13 +2,15 @@
 pragma solidity ^0.8.20;
 
 // EXTERNAL IMPORTS
+import {ERC1155HolderUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC1155/utils/ERC1155HolderUpgradeable.sol";
 import {ERC721HolderUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/utils/ERC721HolderUpgradeable.sol";
 import {AccessManagedUpgradeable} from "@openzeppelin/contracts-upgradeable/access/manager/AccessManagedUpgradeable.sol";
+import {AccessManagerUpgradeable} from "@openzeppelin/contracts-upgradeable/access/manager/AccessManagerUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {IERC1155} from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -19,18 +21,22 @@ import {AddressBook} from "./lib/AddressBook.sol";
 /// @title DarkMarketAuction
 /// @author Elite Oracle | Kristian Peter
 /// @notice This contract allows users to start, bid, and finalize auctions for a variety of ERC tokens (digital assets)
-/// @custom:version 1.3.2
-/// @custom:release October 2023
+/// @custom:version 1.4.1
+/// @custom:release November 2023
 contract DarkMarketAuction is
     IDarkMarketAuction,
     Initializable,
+    ERC1155HolderUpgradeable,
     ERC721HolderUpgradeable,
     AccessManagedUpgradeable,
-    OwnableUpgradeable,
+    AccessManagerUpgradeable,
     UUPSUpgradeable,
     PausableUpgradeable,
     ReentrancyGuardUpgradeable
 {
+    // Access Manager for Contract //
+    AccessManagerUpgradeable private accessManager;
+
     // =========================== //
     // STATE VARIABLES             //
     // All Inheritied By Interface //
@@ -57,6 +63,8 @@ contract DarkMarketAuction is
     /*********************
      * Parameter-related *
      *********************/
+
+    address private treasuryAddress; // Initialized in Address Book
 
     uint256 private _minAuctionDuration;
     /// @inheritdoc IDarkMarketAuction
@@ -103,15 +111,19 @@ contract DarkMarketAuction is
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
+        accessManager = AccessManagerUpgradeable(AddressBook.accessManager());
     }
 
-    function initialize() public initializer {
+    function initialize() initializer public {
         __ERC721Holder_init();
+        __ERC1155Holder_init();
         __Pausable_init();
         __AccessManaged_init(AddressBook.accessManager());
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
-        __Ownable_init(AddressBook.accessManager());
+
+        // Set up Treasury
+        treasuryAddress = AddressBook.treasury();
 
         _nextAuctionId = 1;
         _minAuctionDuration = 1 minutes;
@@ -122,6 +134,13 @@ contract DarkMarketAuction is
         _maxPayment = 1000;
         _maxAssets = 20;
     }
+
+    function isAdmin() public view returns (bool) {
+    // Assuming ADMIN_ROLE is a constant in AccessManagerUpgradeable and you want to check for the current contract
+    (bool immediate,) = accessManager.canCall(msg.sender, address(this), this.isAdmin.selector);
+    return immediate;
+    }
+
 
     // ============================
     // AUCTION FUNCTIONS
@@ -250,7 +269,7 @@ contract DarkMarketAuction is
 
         IERC20 bidToken = IERC20(auction.bidTokenAddress);
 
-        // If the caller is the seller or the owner
+        // If the caller is the seller
         if (msg.sender == auction.seller) {
             uint256 fee = auction.highestBid *
                 (auction.fees.contractFee / 10000);
@@ -267,7 +286,7 @@ contract DarkMarketAuction is
             emit SellerFinalized(auctionId, auction.seller, sellerAmount);
         }
 
-        // If the caller is the highest bidder or the owner
+        // If the caller is the highest bidder
         if (msg.sender == auction.highestBidder) {
             // Safely transfer all auctioned tokens to the highest bidder
             for (uint i = 0; i < auction.tokens.length; i++) {
@@ -285,22 +304,21 @@ contract DarkMarketAuction is
             );
         }
 
-        // If the caller is the owner
-        if (msg.sender == owner()) {
+        // If the caller is the ADMIN
+        if (isAdmin()) {
             uint256 fee = auction.highestBid *
                 (auction.fees.contractFee / 10000);
             uint256 royalty = auction.highestBid *
                 (auction.fees.royaltyFee / 10000);
 
-            // Safely transfer Fees to Owner
-            safeTransfer(bidToken, owner(), fee);
+            // Safely transfer Fees to Treasury
+            safeTransfer(bidToken, treasuryAddress, fee);
 
             // Safely transfer Royalty Fees to Creator
             safeTransfer(bidToken, auction.fees.royaltyAddress, royalty);
 
-            emit OwnerFinalized(
+            emit AuctionFinalized(
                 auctionId,
-                owner(),
                 fee,
                 auction.fees.royaltyAddress,
                 royalty
@@ -451,9 +469,9 @@ contract DarkMarketAuction is
         _unpause();
     }
 
+    // @dev Authorize Updagrade Implementation
     function _authorizeUpgrade(
         address newImplementation
     ) internal override restricted {}
 
-    function withdrawPending() external override {}
 }
