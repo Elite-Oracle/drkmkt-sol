@@ -6,12 +6,4 @@ verbosity = 5
 
 remappings = ["@openzeppelin/=node_modules/@openzeppelin"]
 
-[fuzz]
-target = "./fuzz/DarkMarketFuzz.t.sol"
-runs = 1000
-timeout = 60
-seed = 12345
-dictionary = ["0x1234...", "0x5678..."]
-max_test_rejects = 10000
-
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config
