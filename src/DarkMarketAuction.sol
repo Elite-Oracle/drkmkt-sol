@@ -34,6 +34,12 @@ contract DarkMarketAuction is
     PausableUpgradeable,
     ReentrancyGuardUpgradeable
 {
+
+    // DEBUGGING ************
+    event Debug(string msg);
+    event DebugNum(string msg, uint256);
+    event DebugString(string msg, string);
+
     // Access Manager for Contract //
     AccessManagerUpgradeable private accessManager;
 
@@ -154,6 +160,7 @@ contract DarkMarketAuction is
         address ERC20forBidding,
         FeeDetail memory _fees
     ) external whenNotPaused returns (uint256) {
+               emit Debug("Starting Auction...");
         if (_tokens.length == 0 || _tokens.length > _maxAssets)
             revert InvalidAAssetCount(_tokens.length, _maxAssets);
         if (duration < _minAuctionDuration || duration > _maxAuctionDuration)
@@ -168,6 +175,7 @@ contract DarkMarketAuction is
             revert InvalidAuctionFeePercentage(_fees.royaltyFee, _maxPayment);
 
         // Initialize a new auction
+               emit Debug("Init Auction...");
         Auction storage newAuction = _auctions[_nextAuctionId];
         newAuction.seller = payable(msg.sender);
         newAuction.startTime = uint32(block.timestamp);
@@ -178,6 +186,7 @@ contract DarkMarketAuction is
         newAuction.fees = _fees;
 
         // Transfer each ERC721 or ERC1155 token to the contract
+               emit Debug("Transferring Tokens...");
         for (uint i = 0; i < _tokens.length; i++) {
             if (_tokens[i].tokenType == TokenType.ERC721) {
         IERC721(_tokens[i].tokenAddress).safeTransferFrom(
