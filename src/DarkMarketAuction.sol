@@ -177,15 +177,25 @@ contract DarkMarketAuction is
         newAuction.bidTokenAddress = ERC20forBidding;
         newAuction.fees = _fees;
 
-        // Transfer each ERC721 token to the contract
+        // Transfer each ERC721 or ERC1155 token to the contract
         for (uint i = 0; i < _tokens.length; i++) {
-            IERC721(_tokens[i].tokenAddress).safeTransferFrom(
-                msg.sender,
-                address(this),
-                _tokens[i].tokenId
-            );
-            newAuction.tokens.push(_tokens[i]);
-        }
+            if (_tokens[i].tokenType == TokenType.ERC721) {
+        IERC721(_tokens[i].tokenAddress).safeTransferFrom(
+            msg.sender,
+            address(this),
+            _tokens[i].tokenId
+        );
+    } else if (_tokens[i].tokenType == TokenType.ERC1155) {
+        IERC1155(_tokens[i].tokenAddress).safeTransferFrom(
+            msg.sender,
+            address(this),
+            _tokens[i].tokenId,
+            _tokens[i].tokenQuantity,
+            ""
+        );
+    }
+        newAuction.tokens.push(_tokens[i]);
+    }
 
         emit AuctionStarted(
             _nextAuctionId,
@@ -290,12 +300,22 @@ contract DarkMarketAuction is
         if (msg.sender == auction.highestBidder) {
             // Safely transfer all auctioned tokens to the highest bidder
             for (uint i = 0; i < auction.tokens.length; i++) {
+                if (auction.tokens[i].tokenType == TokenType.ERC721) {
                 IERC721(auction.tokens[i].tokenAddress).safeTransferFrom(
-                    address(this),
-                    auction.highestBidder,
-                    auction.tokens[i].tokenId
+                address(this),
+                auction.highestBidder,
+                auction.tokens[i].tokenId
                 );
+            } else if (auction.tokens[i].tokenType     == TokenType.ERC1155) {
+            IERC1155(auction.tokens[i].tokenAddress).safeTransferFrom(
+            address(this),
+            auction.highestBidder,
+            auction.tokens[i].tokenId,
+            auction.tokens[i].tokenQuantity,
+            ""
+            );
             }
+        }
 
             emit BidderFinalized(
                 auctionId,

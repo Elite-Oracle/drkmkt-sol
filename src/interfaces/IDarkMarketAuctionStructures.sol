@@ -22,11 +22,13 @@ interface IDarkMarketAuctionStructures {
     /// @custom:member uint256 tokenId The ID of the token
     /// @custom:member uint256 tokenQuantity The quantity of the token (relevant for ERC1155)
     /// @custom:member bool isERC1155 A flag to indicate if the token is ERC1155 (true) or ERC721 (false)
+    enum TokenType { ERC721, ERC1155 }
+
     struct TokenDetail {
     address tokenAddress;
     uint256 tokenId;
     uint256 tokenQuantity;
-    bool isERC1155;
+    TokenType tokenType;
     }
 
 
