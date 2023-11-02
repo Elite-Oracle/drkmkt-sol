@@ -70,7 +70,7 @@ interface IDarkMarketAuction is IDarkMarketAuctionStructures {
     /// @notice Auction is finalized.
     event BidderFinalized(uint256 auctionId, address winner, uint256 amount);
     /// @notice Auction is finalized.
-    event OwnerFinalized(uint256 auctionId, address owner, uint256 fee, address royaltyAddress, uint256 royalty);
+    event AuctionFinalized(uint256 auctionId, uint256 fee, address royaltyAddress, uint256 royalty);
     /// @notice Auction is cancelled.
     event AuctionCancelled(uint256 auctionId);
     /// @notice Incentive is received
@@ -161,9 +161,6 @@ interface IDarkMarketAuction is IDarkMarketAuctionStructures {
     ///      different transfers are executed.
     /// @param auctionId The ID of the auction to finalize.
     function finalizeAuction(uint256 auctionId) external;
-
-    /// @dev Allows users to withdraw their funds if a transfer failed during finalizeAuction.
-    function withdrawPending() external;
 
     /// @dev Failsafe function to cancel a specific auction by the contract owner.
     /// @param auctionId The ID of the auction.

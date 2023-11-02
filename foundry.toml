@@ -4,14 +4,6 @@ out = "out"
 libs = ["lib"]
 verbosity = 5
 
-remappings = ["@openzeppelin/=lib/openzeppelin-contracts"]
-
-[fuzz]
-target = "./fuzz/DarkMarketFuzz.t.sol"
-runs = 1000
-timeout = 60
-seed = 12345
-dictionary = ["0x1234...", "0x5678..."]
-max_test_rejects = 10000
+remappings = ["@openzeppelin/=node_modules/@openzeppelin"]
 
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config
