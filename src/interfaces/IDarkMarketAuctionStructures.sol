@@ -31,7 +31,6 @@ interface IDarkMarketAuctionStructures {
     TokenType tokenType;
     }
 
-
     /// @notice Represents the Contract Fees for every auction
     /// @custom:member uint256 contractFee The fee charged for the auction
     /// @custom:member uint256 royaltyFee The royalty fee
@@ -68,4 +67,19 @@ interface IDarkMarketAuctionStructures {
         FeeDetail fees;
     }
 
+    /// @notice Custom 'getter' functions to return the Auction Details and Tokens
+    /// @custom:member all 'static' variables in the Auction Structure, a separate 'getter' is used for the dynamic array of tokens
+    function getAuctionDetails(uint256 auctionId) external view returns (
+        address seller,
+        uint32 startTime,
+        uint32 endTime,
+        address highestBidder,
+        uint256 highestBid,
+        uint256 bidderIncentive,
+        AuctionStatus status,
+        address bidTokenAddress,
+        uint256 totalIncentives
+    );
+
+    function getAuctionTokens(uint256 auctionId, uint256 tokenIndex) external view returns (TokenDetail memory);
 }
