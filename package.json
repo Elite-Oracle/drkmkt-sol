@@ -4,8 +4,23 @@
   "description": "Solidity Code for Dark Market",
   "main": "index.js",
   "scripts": {
-    "docs": "solidity-docgen",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "compile": "npx hardhat compile",
+    "docgen": "npx hardhat docgen",
+    "==========HELPERS==========": "",
+    "deploy:dfk": "npx hardhat deploy",
+    "upgrade:dfk": "npx hardhat upgrade",
+    "verify:dfk": "npx hardhat verify",
+    "deploy:dfk-testnet": "npx hardhat deploy --network dfk-testnet",
+    "upgrade:dfk-testnet": "npx hardhat upgrade --network dfk-testnet",
+    "verify:dfk-testnet": "npx hardhat verify --network dfk-testnet",
+    "========DFK-TESTNET========": "",
+    "DarkMarketAuction:dfk-testnet:deploy": "npm run deploy:dfk-testnet -- --name DarkMarketAuction",
+    "DarkMarketAuction:dfk-testnet:upgrade": "npm run upgrade:dfk-testnet -- --name DarkMarketAuction",
+    "DarkMarketAuction:dfk-testnet:verify": "npm run verify:dfk-testnet -- --name DarkMarketAuction",
+    "============DFK============": "",
+    "DarkMarketAuction:dfk:deploy": "npm run deploy:dfk -- --name DarkMarketAuction",
+    "DarkMarketAuction:dfk:upgrade": "npm run upgrade:dfk -- --name DarkMarketAuction",
+    "DarkMarketAuction:dfk:verify": "npm run verify:dfk -- --name DarkMarketAuction"
   },
   "keywords": [],
   "author": "",
@@ -17,5 +32,17 @@
     "dapp": "latest",
     "prb-math": "^2.4.3",
     "solidity-docgen": "0.6.0-beta.36"
+  },
+  "devDependencies": {
+    "@dirtycajunrice/contracts": "^0.11.0",
+    "@dirtycajunrice/hardhat-tasks": "^1.13.0",
+    "@nomicfoundation/hardhat-ethers": "3.0.4",
+    "@nomicfoundation/hardhat-verify": "^1.1.1",
+    "@openzeppelin/hardhat-upgrades": "2.3.3",
+    "@tenderly/hardhat-tenderly": "1.7.7",
+    "ethers": "^6.7.1",
+    "hardhat": "2.17.3",
+    "ts-node": "10.9.1",
+    "typescript": "5.2.2"
   }
 }

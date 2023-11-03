@@ -10,10 +10,12 @@ out/
 node_modules/
 
 # Docs
-docs/
+# docs/
 
 # Dotenv file
 .env
 .idea
 
 .vscode
+
+/artifacts/@openzeppelin

@@ -1,0 +1,9 @@
+{
+  "335": {
+    "0xCd9Df581F855d07144F150B0C681824548008644": {
+      "name": "DarkMarketAuction",
+      "type": "uups",
+      "impl": "0x9B83AD27226ea2127d10474534f61DA4C83ac101"
+    }
+  }
+}
