@@ -5,7 +5,6 @@ pragma solidity ^0.8.20;
 import {ERC1155HolderUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC1155/utils/ERC1155HolderUpgradeable.sol";
 import {ERC721HolderUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/utils/ERC721HolderUpgradeable.sol";
 import {AccessManagedUpgradeable} from "@openzeppelin/contracts-upgradeable/access/manager/AccessManagedUpgradeable.sol";
-import {AccessManagerUpgradeable} from "@openzeppelin/contracts-upgradeable/access/manager/AccessManagerUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -29,20 +28,10 @@ contract DarkMarketAuction is
     ERC1155HolderUpgradeable,
     ERC721HolderUpgradeable,
     AccessManagedUpgradeable,
-    AccessManagerUpgradeable,
     UUPSUpgradeable,
     PausableUpgradeable,
     ReentrancyGuardUpgradeable
 {
-
-    // DEBUGGING ************
-    event Debug(string msg);
-    event DebugNum(string msg, uint256);
-    event DebugString(string msg, string);
-
-    // Access Manager for Contract //
-    AccessManagerUpgradeable private accessManager;
-
     // =========================== //
     // STATE VARIABLES             //
     // All Inheritied By Interface //
@@ -52,72 +41,75 @@ contract DarkMarketAuction is
      * Auction-related *
      *******************/
 
-    uint256 private _nextAuctionId;
-    /// @inheritdoc IDarkMarketAuction
-    function nextAuctionId() external view override returns (uint256) {
-        return _nextAuctionId;
+    uint256 public nextAuctionId;
+    mapping(uint256 => Auction) internal auctions;
+
+    /**
+     * @notice Custom 'getter' function to return the Auction Details
+     * @param auctionId The ID of the auction to get details for
+     * @return seller The address of the seller
+     * @return startTime The start time of the auction
+     * @return endTime The end time of the auction
+     * @return highestBidder The address of the highest bidder
+     * @return highestBid The highest bid amount
+     * @return bidderIncentive The incentive for the bidder
+     * @return status The status of the auction
+     * @return bidTokenAddress The address of the bid token
+     * @return totalIncentives The total incentives for the auction
+     */
+    function getAuctionDetails(uint256 auctionId) external view override returns (
+        address seller,
+        uint32 startTime,
+        uint32 endTime,
+        address highestBidder,
+        uint256 highestBid,
+        uint256 bidderIncentive,
+        AuctionStatus status,
+        address bidTokenAddress,
+        uint256 totalIncentives
+    ) {
+        Auction storage auction = auctions[auctionId];
+        return (
+            auction.seller,
+            auction.startTime,
+            auction.endTime,
+            auction.highestBidder,
+            auction.highestBid,
+            auction.bidderIncentive,
+            auction.status,
+            auction.bidTokenAddress,
+            auction.totalIncentives
+        );
     }
 
-    mapping(uint256 => Auction) private _auctions;
-
-    function auctions(
-        uint256 auctionId
-    ) external view override returns (Auction memory) {
-        return _auctions[auctionId];
+    /**
+     * @notice Custom 'getter' function to return the Token Details for a given auction
+     * @param auctionId The ID of the auction to get token details for
+     * @param tokenIndex The index of the token in the auction's token array
+     * @return The details of the token at the given index
+     */
+    function getAuctionTokens(uint256 auctionId, uint256 tokenIndex) external view override returns (TokenDetail memory) {
+        require(tokenIndex < auctions[auctionId].tokens.length, "Token index out of bounds");
+        return auctions[auctionId].tokens[tokenIndex];
     }
 
     /*********************
      * Parameter-related *
      *********************/
 
-    address private treasuryAddress; // Initialized in Address Book
+    address public treasuryAddress; // Initialized in Address Book
 
-    uint256 private _minAuctionDuration;
-    /// @inheritdoc IDarkMarketAuction
-    function minAuctionDuration() external view override returns (uint256) {
-        return _minAuctionDuration;
-    }
-
-    uint256 private _maxAuctionDuration;
-
-    function maxAuctionDuration() external view override returns (uint256) {
-        return _maxAuctionDuration;
-    }
-
-    uint256 private _warmUpTime;
-
-    function warmUpTime() external view override returns (uint256) {
-        return _warmUpTime;
-    }
-
-    uint32 private _extraTime;
-
-    function extraTime() external view override returns (uint32) {
-        return _extraTime;
-    }
-
-    uint256 private _maxIncentive;
-
-    function maxIncentive() external view override returns (uint256) {
-        return _maxIncentive;
-    }
-
-    uint256 private _maxPayment;
-
-    function maxPayment() external view override returns (uint256) {
-        return _maxPayment;
-    }
-
-    uint256 private _maxAssets;
-
-    function maxAssets() external view override returns (uint256) {
-        return _maxAssets;
-    }
+    uint256 public minAuctionDuration;
+    uint256 public maxAuctionDuration;
+    uint256 public warmUpTime;
+    uint32  public extraTime;
+    uint256 public maxIncentive;
+    uint256 public maxPayment;
+    uint256 public maxAssets;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
-        accessManager = AccessManagerUpgradeable(AddressBook.accessManager());
     }
 
     function initialize() initializer public {
@@ -131,22 +123,15 @@ contract DarkMarketAuction is
         // Set up Treasury
         treasuryAddress = AddressBook.treasury();
 
-        _nextAuctionId = 1;
-        _minAuctionDuration = 1 minutes;
-        _maxAuctionDuration = 12 weeks;
-        _warmUpTime = 0 minutes;
-        _extraTime = 0 minutes;
-        _maxIncentive = 12;
-        _maxPayment = 1000;
-        _maxAssets = 20;
+        nextAuctionId = 1;
+        minAuctionDuration = 1 minutes;
+        maxAuctionDuration = 12 weeks;
+        warmUpTime = 0 minutes;
+        extraTime = 0 minutes;
+        maxIncentive = 12;
+        maxPayment = 1000;
+        maxAssets = 20;
     }
-
-    function isAdmin() public view returns (bool) {
-    // Assuming ADMIN_ROLE is a constant in AccessManagerUpgradeable and you want to check for the current contract
-    (bool immediate,) = accessManager.canCall(msg.sender, address(this), this.isAdmin.selector);
-    return immediate;
-    }
-
 
     // ============================
     // AUCTION FUNCTIONS
@@ -160,23 +145,21 @@ contract DarkMarketAuction is
         address ERC20forBidding,
         FeeDetail memory _fees
     ) external whenNotPaused returns (uint256) {
-               emit Debug("Starting Auction...");
-        if (_tokens.length == 0 || _tokens.length > _maxAssets)
-            revert InvalidAAssetCount(_tokens.length, _maxAssets);
-        if (duration < _minAuctionDuration || duration > _maxAuctionDuration)
+        if (_tokens.length == 0 || _tokens.length > maxAssets)
+            revert InvalidAAssetCount(_tokens.length, maxAssets);
+        if (duration < minAuctionDuration || duration > maxAuctionDuration)
             revert InvalidAuctionDuration(
                 duration,
-                _minAuctionDuration,
-                _maxAuctionDuration
+                minAuctionDuration,
+                maxAuctionDuration
             );
-        if (_fees.contractFee > _maxPayment)
-            revert InvalidAuctionFeePercentage(_fees.contractFee, _maxPayment);
-        if (_fees.royaltyFee > _maxPayment)
-            revert InvalidAuctionFeePercentage(_fees.royaltyFee, _maxPayment);
+        if (_fees.contractFee > maxPayment)
+            revert InvalidAuctionFeePercentage(_fees.contractFee, maxPayment);
+        if (_fees.royaltyFee > maxPayment)
+            revert InvalidAuctionFeePercentage(_fees.royaltyFee, maxPayment);
 
         // Initialize a new auction
-               emit Debug("Init Auction...");
-        Auction storage newAuction = _auctions[_nextAuctionId];
+        Auction storage newAuction = auctions[nextAuctionId];
         newAuction.seller = payable(msg.sender);
         newAuction.startTime = uint32(block.timestamp);
         newAuction.endTime = uint32(block.timestamp + duration);
@@ -186,7 +169,6 @@ contract DarkMarketAuction is
         newAuction.fees = _fees;
 
         // Transfer each ERC721 or ERC1155 token to the contract
-               emit Debug("Transferring Tokens...");
         for (uint i = 0; i < _tokens.length; i++) {
             if (_tokens[i].tokenType == TokenType.ERC721) {
         IERC721(_tokens[i].tokenAddress).safeTransferFrom(
@@ -207,14 +189,14 @@ contract DarkMarketAuction is
     }
 
         emit AuctionStarted(
-            _nextAuctionId,
+            nextAuctionId,
             msg.sender,
             startPrice,
             newAuction.endTime
         );
-        _nextAuctionId++;
+        nextAuctionId++;
 
-        return _nextAuctionId - 1;
+        return nextAuctionId - 1;
     }
 
     /// @inheritdoc IDarkMarketAuction
@@ -223,21 +205,21 @@ contract DarkMarketAuction is
         uint256 bidAmount,
         uint256 incentiveAmount
     ) external nonReentrant whenNotPaused {
-        Auction storage auction = _auctions[auctionId];
+        Auction storage auction = auctions[auctionId];
 
         if (block.timestamp > auction.endTime)
             revert AuctionEnded(block.timestamp, auction.endTime);
         if (bidAmount <= auction.highestBid)
             revert BidTooLow(bidAmount, auction.highestBid);
-        if (incentiveAmount > (_maxIncentive * bidAmount) / 100)
-            revert IncentiveTooHigh(incentiveAmount, _maxIncentive);
+        if (incentiveAmount > (maxIncentive * bidAmount) / 100)
+            revert IncentiveTooHigh(incentiveAmount, maxIncentive);
 
         IERC20 bidToken = IERC20(auction.bidTokenAddress);
         bidToken.transferFrom(msg.sender, address(this), bidAmount);
 
         // Check for extra time condition
-        if (block.timestamp > auction.endTime - _extraTime) {
-            auction.endTime += _extraTime;
+        if (block.timestamp > auction.endTime - extraTime) {
+            auction.endTime += extraTime;
             auction.status = AuctionStatus.ExtraTime;
         } else {
             auction.status = AuctionStatus.BidReceived;
@@ -246,7 +228,7 @@ contract DarkMarketAuction is
         // Refund previous bidder if applicable
         if (
             auction.highestBidder != address(0) &&
-            block.timestamp >= auction.startTime + _warmUpTime
+            block.timestamp >= auction.startTime + warmUpTime
         ) {
             uint256 refundAmount = auction.highestBid + auction.bidderIncentive;
             bidToken.transfer(auction.highestBidder, refundAmount);
@@ -275,9 +257,8 @@ contract DarkMarketAuction is
 
     /// @inheritdoc IDarkMarketAuction
     function finalizeAuction(
-        uint256 auctionId
-    ) external nonReentrant whenNotPaused {
-        Auction storage auction = _auctions[auctionId];
+        uint256 auctionId ) external nonReentrant whenNotPaused {
+        Auction storage auction = auctions[auctionId];
         if (block.timestamp < auction.endTime)
             revert AuctionNotEnded(block.timestamp, auction.endTime);
 
@@ -287,18 +268,14 @@ contract DarkMarketAuction is
         }
 
         IERC20 bidToken = IERC20(auction.bidTokenAddress);
+        uint256 auctionFee = auction.highestBid *
+                (auction.fees.contractFee / 10000);
+        uint256 auctionRoyalty = auction.highestBid *
+                (auction.fees.royaltyFee / 10000);
+        uint256 sellerAmount = auction.highestBid - auctionFee - auctionRoyalty - auction.totalIncentives;
 
         // If the caller is the seller
         if (msg.sender == auction.seller) {
-            uint256 fee = auction.highestBid *
-                (auction.fees.contractFee / 10000);
-            uint256 royalty = auction.highestBid *
-                (auction.fees.royaltyFee / 10000);
-            uint256 sellerAmount = auction.highestBid -
-                fee -
-                royalty -
-                auction.totalIncentives;
-
             // Safely transfer winning bid to Seller minus incentives and fees
             safeTransfer(bidToken, auction.seller, sellerAmount);
 
@@ -325,7 +302,6 @@ contract DarkMarketAuction is
             );
             }
         }
-
             emit BidderFinalized(
                 auctionId,
                 auction.highestBidder,
@@ -333,32 +309,21 @@ contract DarkMarketAuction is
             );
         }
 
-        // If the caller is the ADMIN
-        if (isAdmin()) {
-            uint256 fee = auction.highestBid *
-                (auction.fees.contractFee / 10000);
-            uint256 royalty = auction.highestBid *
-                (auction.fees.royaltyFee / 10000);
+        // Safely transfer Fees to Treasury
+        if (auctionFee > 0) {
+            safeTransfer(bidToken, treasuryAddress, auctionFee);
+        }
 
-            // Safely transfer Fees to Treasury
-            safeTransfer(bidToken, treasuryAddress, fee);
-
-            // Safely transfer Royalty Fees to Creator
-            safeTransfer(bidToken, auction.fees.royaltyAddress, royalty);
-
-            emit AuctionFinalized(
-                auctionId,
-                fee,
-                auction.fees.royaltyAddress,
-                royalty
-            );
+        // Safely transfer Royalty Fees to Creator
+        if (auctionRoyalty > 0) {          
+            safeTransfer(bidToken, auction.fees.royaltyAddress, auctionRoyalty);
         }
     }
 
     /// @inheritdoc IDarkMarketAuction
     function cancelSpecificAuction(uint256 auctionId) external restricted {
-        if (auctionId >= _nextAuctionId) revert InvalidAuction(auctionId);
-        Auction storage auction = _auctions[auctionId];
+        if (auctionId >= nextAuctionId) revert InvalidAuction(auctionId);
+        Auction storage auction = auctions[auctionId];
 
         if (auction.highestBidder != address(0)) {
             IERC20(auction.bidTokenAddress).transfer(
@@ -386,9 +351,9 @@ contract DarkMarketAuction is
             revert InvalidAuctionDuration(
                 _duration,
                 1 minutes,
-                _maxAuctionDuration
+                maxAuctionDuration
             );
-        _minAuctionDuration = _duration;
+        minAuctionDuration = _duration;
         emit MinAuctionDurationUpdated(_duration);
     }
 
@@ -397,30 +362,30 @@ contract DarkMarketAuction is
         if (_duration > 52 weeks)
             revert InvalidAuctionDuration(
                 _duration,
-                _minAuctionDuration,
+                maxAuctionDuration,
                 52 weeks
             );
-        _maxAuctionDuration = _duration;
+        maxAuctionDuration = _duration;
         emit MaxAuctionDurationUpdated(_duration);
     }
 
     /// @inheritdoc IDarkMarketAuction
     function setMaxAssets(uint16 _assets) external restricted {
         if (_assets > 100) revert InvalidAAssetCount(_assets, 100);
-        _maxAssets = _assets;
+        maxAssets = _assets;
         emit MaxAssetsUpdated(_assets);
     }
 
     /// @inheritdoc IDarkMarketAuction
     function setMaxIncentive(uint16 _incentive) external restricted {
         if (_incentive >= 100) revert IncentiveTooHigh(_incentive, 99);
-        _maxIncentive = _incentive;
+        maxIncentive = _incentive;
         emit MaxIncentiveUpdated(_incentive);
     }
 
     /// @inheritdoc IDarkMarketAuction
     function setWarmUpTime(uint32 _warmUp) external restricted {
-        _warmUpTime = _warmUp;
+        warmUpTime = _warmUp;
         emit WarmUpTimeUpdated(_warmUp);
     }
 
@@ -428,14 +393,14 @@ contract DarkMarketAuction is
     function setExtraTime(uint32 _extTime) external restricted {
         if (_extTime > 12 hours) revert InvalidExtraTime(_extTime, 12 hours);
 
-        _extraTime = _extTime;
-        emit ExtraTimeUpdated(_extraTime);
+        extraTime = _extTime;
+        emit ExtraTimeUpdated(extraTime);
     }
 
     /// @inheritdoc IDarkMarketAuction
     function setMaxPayment(uint16 _maxPmt) external restricted {
         require(_maxPmt <= 1000, "Fees must be below 10%");
-        _maxPayment = _maxPmt;
+        maxPayment = _maxPmt;
         emit MaxPaymentUpdated(_maxPmt);
     }
 
@@ -443,19 +408,19 @@ contract DarkMarketAuction is
     function getAuctionStatus(
         uint256 auctionId
     ) external view returns (AuctionStatus) {
-        return _auctions[auctionId].status;
+        return auctions[auctionId].status;
     }
 
     /// @inheritdoc IDarkMarketAuction
     function getAuctionEndTime(
         uint256 auctionId
     ) external view returns (uint32) {
-        return _auctions[auctionId].endTime;
+        return auctions[auctionId].endTime;
     }
 
     /// @inheritdoc IDarkMarketAuction
     function cancelAuction(uint256 auctionId) public {
-        Auction storage auction = _auctions[auctionId];
+        Auction storage auction = auctions[auctionId];
         if (msg.sender != auction.seller)
             revert NotAuctionSeller(auction.seller, msg.sender);
         if (

@@ -6,8 +6,6 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 contract EliteOracleAccessManager is Initializable, AccessManagerUpgradeable, UUPSUpgradeable {
-  event DebugAddress (address);
-  event Debug (string);
 
   /// @custom:oz-upgrades-unsafe-allow constructor
   constructor() {

@@ -7,51 +7,9 @@ import "./IDarkMarketAuctionStructures.sol";
 /// @title IDarkMarketAuction
 /// @author Elite Oracle | Kristian Peter
 /// @notice Interface to interact with the DarkMarketAuction contract.
-/// @custom:version 1.3.2
-/// @custom:release October 2023
+/// @custom:version 1.4.1
+/// @custom:release November 2023
 interface IDarkMarketAuction is IDarkMarketAuctionStructures {
-
-    // =============== //
-    // STATE VARIABLES //
-    // =============== //
-
-    /*******************
-     * Auction-related *
-     *******************/
-
-    /// @notice Counter for the next auction ID
-    function nextAuctionId() external returns (uint256);
-
-    /// @notice Mapping from auction ID to its details
-    function auctions(uint256 auctionId) external returns (Auction memory);
-
-    /*********************
-     * Parameter-related *
-     *********************/
-
-    /// @notice Minimum auction duration
-    function minAuctionDuration() external returns (uint256);
-
-    /// @notice Minimum auction duration
-    function maxAuctionDuration() external returns (uint256);
-
-    /// @notice Warm-up time to be used to discourage bots from placing arbitrary opening bids
-    function warmUpTime() external returns (uint256);
-
-    /// @notice Extra time added to the auction if a bid is placed in the last minutes of the bidding. This helps prevent
-    ///         auction sniping and gives other participants a chance to place their bids.
-    function extraTime() external returns (uint32);
-
-    /// @notice Maximum bidder incentive in percentage (12%)
-    function maxIncentive() external returns (uint256);
-
-    /// @notice The maximum payment paid out of the auction is 10% and this is represented by 10^3.
-    function maxPayment() external returns (uint256);
-
-    /// @notice The maximum number of Assets that can be sold in One Auction.
-    function maxAssets() external returns (uint256);
-
-
 
     // ====== //
     // EVENTS //
@@ -139,23 +97,27 @@ interface IDarkMarketAuction is IDarkMarketAuctionStructures {
     /// @notice Starts an auction by transferring the ERC721 tokens into the contract.
     /// @param startPrice The starting price for the auction.
     /// @param duration The duration of the auction in seconds (86,400 = 1 day).
-    /// @param _tokens The array of TokenDetail containing the ERC721 contract addresses and token IDs.
+    /// @param tokens The array of TokenDetail containing the ERC721 contract addresses and token IDs.
     /// @param ERC20forBidding The address of the ERC20 token used for bidding.
-    /// @param _fees The fees and address for royalties.
+    /// @param fees The fees and address for royalties.
     /// @return The ID of the newly created auction.
     function startAuction(
         uint256 startPrice,
         uint32 duration,
-        TokenDetail[] memory _tokens,
+        TokenDetail[] memory tokens,
         address ERC20forBidding,
-        FeeDetail memory _fees
+        FeeDetail memory fees
     ) external returns (uint256);
 
     /// @notice Allows users to place bids on an auction.
     /// @param auctionId The ID of the auction.
     /// @param bidAmount The bid amount.
     /// @param incentiveAmount The bidder incentive.
-    function bid(uint256 auctionId, uint256 bidAmount, uint256 incentiveAmount) external;
+    function bid(
+        uint256 auctionId, 
+        uint256 bidAmount, 
+        uint256 incentiveAmount
+        ) external;
 
     /// @dev Finalizes an auction, handling transfers to the seller, highest bidder, and owner. Depending on the caller,
     ///      different transfers are executed.
@@ -207,4 +169,27 @@ interface IDarkMarketAuction is IDarkMarketAuctionStructures {
     /// @dev Allows the Seller to cancel the auction if no bids have been placed.
     /// @param auctionId The ID of the auction.
     function cancelAuction(uint256 auctionId) external;
+
+    /// @dev Custom 'getter' function to obtain all static variables in Auction.
+    /// @param auctionId The ID of the auction.
+    function getAuctionDetails(uint256 auctionId) external view returns (
+        address seller,
+        uint32 startTime,
+        uint32 endTime,
+        address highestBidder,
+        uint256 highestBid,
+        uint256 bidderIncentive,
+        AuctionStatus status,
+        address bidTokenAddress,
+        uint256 totalIncentives
+    );
+
+    /// @dev Custom 'getter' function to obtain dynamic array of token variables in Auction.
+    /// @param auctionId The ID of the auction.
+    function getAuctionTokens(
+        uint256 auctionId, 
+        uint256 tokenIndex
+        ) external view 
+    returns (TokenDetail memory);
+
 }
