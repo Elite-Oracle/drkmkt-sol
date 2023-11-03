@@ -30,8 +30,10 @@
     "@openzeppelin/contracts-upgradeable": "5.0.0",
     "@prb/math": "^4.0.1",
     "dapp": "latest",
+    "hardhat-tenderly": "^1.0.1",
     "prb-math": "^2.4.3",
-    "solidity-docgen": "0.6.0-beta.36"
+    "solidity-docgen": "0.6.0-beta.36",
+    "tenderly": "^0.5.3"
   },
   "devDependencies": {
     "@dirtycajunrice/contracts": "^0.11.0",

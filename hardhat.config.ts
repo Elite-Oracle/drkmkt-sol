@@ -93,8 +93,8 @@ module.exports = {
     artifacts: "./artifacts"
   },
   tenderly: {
-    project: 'dark-market',
-    username: 'elite-oracle',
+    project: 'DarkMarket',
+    username: 'drkmkt',
   },
   solidityDocgen: {
     sourcesDir: "./src/contracts",
