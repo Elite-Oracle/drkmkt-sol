@@ -19,3 +19,5 @@ node_modules/
 .vscode
 
 /artifacts/@openzeppelin
+/artifacts/build-info
+
