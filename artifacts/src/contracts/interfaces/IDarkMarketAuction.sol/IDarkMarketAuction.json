@@ -499,6 +499,19 @@
       "inputs": [
         {
           "indexed": false,
+          "internalType": "address",
+          "name": "newTreasury",
+          "type": "address"
+        }
+      ],
+      "name": "TreasuryUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
           "internalType": "uint256",
           "name": "newWarmUp",
           "type": "uint256"
@@ -643,6 +656,19 @@
         }
       ],
       "name": "setMinAuctionDuration",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "_treasury",
+          "type": "address"
+        }
+      ],
+      "name": "setTreasury",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"

@@ -1,6 +1,7 @@
 import * as tenderly from "@tenderly/hardhat-tenderly";
 import "solidity-docgen";
 import '@nomicfoundation/hardhat-verify';
+import '@nomicfoundation/hardhat-ethers';
 
 import "@dirtycajunrice/hardhat-tasks/internal/type-extensions"
 import "@dirtycajunrice/hardhat-tasks";
@@ -87,7 +88,7 @@ module.exports = {
     ))
   },
   paths: {
-    sources: "./src/contracts",
+    sources: "./src",
     tests: "./src/test",
     cache: "./cache",
     artifacts: "./artifacts"

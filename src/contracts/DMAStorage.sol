@@ -22,6 +22,7 @@ abstract contract DarkMarketAuctionStorage is Initializable, ContextUpgradeable 
         uint256 _maxPayment;
         uint256 _maxAssets;
         uint256 _extraTime;
+        address _treasury;
         mapping(uint256 => IDarkMarketAuctionStructures.Auction) _auctions;
     }
 
@@ -47,6 +48,7 @@ abstract contract DarkMarketAuctionStorage is Initializable, ContextUpgradeable 
         $._maxIncentive = 12;
         $._maxPayment = 1000;
         $._maxAssets = 20;
+        $._treasury = 0x419C3657532aaD16955291AF7942fea9A1b6d010;
     }
 
     /**
@@ -97,6 +99,16 @@ abstract contract DarkMarketAuctionStorage is Initializable, ContextUpgradeable 
     function extraTime() public view returns (uint256) {
         DMAStorage storage $ = _getDMAStorage();
         return $._extraTime;
+    }
+
+    function treasury() public view returns (address) {
+        DMAStorage storage $ = _getDMAStorage();
+        return $._treasury;
+    }
+
+    function _setTreasury(address treasury_) internal {
+        DMAStorage storage $ = _getDMAStorage();
+        $._treasury = treasury_;
     }
 
     function _setNextAuctionId(uint256 nextAuctionId_) internal {

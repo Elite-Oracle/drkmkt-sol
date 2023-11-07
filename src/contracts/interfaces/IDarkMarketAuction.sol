@@ -52,6 +52,8 @@ interface IDarkMarketAuction is IDarkMarketAuctionStructures {
     event ExtraTimeUpdated(uint256 newExtraTime);
     // @notice Maximum asset count has been updated
     event MaxAssetsUpdated(uint256 newMaxAssets);
+    // @notice Treasury address updated
+    event TreasuryUpdated(address newTreasury);
     // @notice Transfer of asset failed
     event TransferFailed(address tokenAddress, address to, uint256 tokenId);
 
@@ -152,6 +154,10 @@ interface IDarkMarketAuction is IDarkMarketAuctionStructures {
     ///      and the scale is 10^3 (1000 = 10%).
     /// @param _maxPmt The new warm-up time.
     function setMaxPayment(uint256 _maxPmt) external;
+
+    /// @dev Allows the contract owner to set the Treasury address
+    /// @param _treasury The new treasury address
+    function setTreasury(address _treasury) external;
 
     /// @dev Allows the Seller to cancel the auction if no bids have been placed.
     /// @param auctionId The ID of the auction.

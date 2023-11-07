@@ -190,9 +190,9 @@ contract DarkMarketAuction is
             );
         }
 
-        // Safely transfer Fees to Treasury
+        // Safely transfer Fees to treasury
         if (auctionFee > 0) {
-            safeTransfer(bidToken, AddressBook.treasury(), auctionFee);
+            safeTransfer(bidToken, treasury(), auctionFee);
         }
 
         // Safely transfer Royalty Fees to Creator
@@ -275,6 +275,12 @@ contract DarkMarketAuction is
         if (_extTime > 12 hours) revert InvalidExtraTime(_extTime, 12 hours);
         _setExtraTime(_extTime);
         emit ExtraTimeUpdated(_extTime);
+    }
+
+    /// @inheritdoc IDarkMarketAuction
+    function setTreasury(address _treasury) external restricted {
+        _setTreasury(_treasury);
+        emit TreasuryUpdated(_treasury);
     }
 
     /// @inheritdoc IDarkMarketAuction
