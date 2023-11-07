@@ -1,30 +1,31 @@
 const { expect } = require("chai");
 const { ethers, upgrades } = require("hardhat");
 
-describe("MyContract", function () {
-  let myContract;
-  let owner;
+describe("DarkMarketAuction Contract", function () {
+  let DarkMarketAuction, darkMarketAuction;
+  let deployer, otherAccount;
 
   before(async function () {
-    [owner] = await ethers.getSigners();
+    // Get the signers
+    [deployer, otherAccount] = await ethers.getSigners();
 
-    // Check the balance of the owner before deployment
-    const balanceBefore = await owner.getBalance();
-    console.log(`Owner balance before deployment: ${ethers.utils.formatEther(balanceBefore)} ETH`);
+    // Get the contract factory
+    DarkMarketAuction = await ethers.getContractFactory("DarkMarketAuction");
 
-    // Deploy the contract using the owner account
-    const MyContract = await ethers.getContractFactory("DarkMarketAuction", owner);
-    myContract = await upgrades.deployProxy(MyContract, [], { initializer: 'initialize' });
-    await myContract.deployed();
-
-    // Check the balance of the owner after deployment
-    const balanceAfter = await owner.getBalance();
-    console.log(`Owner balance after deployment: ${ethers.utils.formatEther(balanceAfter)} ETH`);
+    // Deploy the contract using a proxy
+    darkMarketAuction = await upgrades.deployProxy(DarkMarketAuction, [], { initializer: 'initialize' });
+    await darkMarketAuction.deployed();
   });
 
-  it("should be initialized correctly", async function () {
-    // Your test code here
+  it("should be deployed", async function () {
+    expect(darkMarketAuction.address).to.be.properAddress;
   });
 
-  // Additional tests...
+  it("should be initialized", async function () {
+    // Add your initialization tests here
+    // For example, checking if the contract is paused or not
+    expect(await darkMarketAuction.paused()).to.equal(false);
+  });
+
+  // Add more tests here to cover the functionality of the contract
 });
