@@ -53,7 +53,7 @@ const networkData = [
 ];
 
 module.exports = {
-  defaultNetwork: "avalanche",
+  defaultNetwork: "hardhat",
   solidity: {
     compilers: [ "8.20" ].map(v => (
       {
