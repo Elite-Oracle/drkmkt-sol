@@ -40,7 +40,7 @@ contract DarkMarketAuction is
         _disableInitializers();
     }
 
-    function initialize() initializer public {
+    function initialize() public initializer {
         __ERC721Holder_init();
         __ERC1155Holder_init();
         __Pausable_init();
