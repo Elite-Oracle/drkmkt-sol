@@ -304,12 +304,6 @@ contract DarkMarketAuction is
         if (auction.status != AuctionStatus.Open) revert AuctionHasBids();
 
         // Transfer all tokens back to the seller
-        uint256 tokenCount = auction.tokens.length;
-        for (uint i; i < tokenCount; i++) {
-            TokenDetail memory token = auction.tokens[i];
-            IERC721(token.tokenAddress).transferFrom(address(this), auction.seller, token.tokenId);
-        }
-
         for (uint i; i < auction.tokens.length; i++) {
             if (auction.tokens[i].tokenType == TokenType.ERC721) {
                 IERC721(auction.tokens[i].tokenAddress).safeTransferFrom(
