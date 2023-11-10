@@ -40,7 +40,7 @@ contract DarkMarketAuction is
         _disableInitializers();
     }
 
-    function initialize() public initializer {
+    function initialize() initializer public {
         __ERC721Holder_init();
         __ERC1155Holder_init();
         __Pausable_init();
@@ -63,6 +63,7 @@ contract DarkMarketAuction is
         FeeDetail calldata _fees
     ) external whenNotPaused nonReentrant {
         uint256 nextAuctionId = _getNextAuctionId();
+        _setNextAuctionId(nextAuctionId);
         if (_tokens.length == 0 || _tokens.length > maxAssets()) revert InvalidAAssetCount(_tokens.length, maxAssets());
         if (duration < minAuctionDuration() || duration > maxAuctionDuration())
             revert InvalidAuctionDuration(duration, minAuctionDuration(), maxAuctionDuration());
@@ -174,13 +175,13 @@ contract DarkMarketAuction is
                 auction.tokens[i].tokenId
                 );
             } else if (auction.tokens[i].tokenType     == TokenType.ERC1155) {
-            IERC1155(auction.tokens[i].tokenAddress).safeTransferFrom(
-            address(this),
-            auction.highestBidder,
-            auction.tokens[i].tokenId,
-            auction.tokens[i].tokenQuantity,
-            ""
-            );
+                IERC1155(auction.tokens[i].tokenAddress).safeTransferFrom(
+                address(this),
+                auction.highestBidder,
+                auction.tokens[i].tokenId,
+                auction.tokens[i].tokenQuantity,
+                ""
+                );
             }
         }
             emit BidderFinalized(
@@ -190,9 +191,9 @@ contract DarkMarketAuction is
             );
         }
 
-        // Safely transfer Fees to treasury
+        // Safely transfer Fees to Treasury
         if (auctionFee > 0) {
-            safeTransfer(bidToken, treasury(), auctionFee);
+            safeTransfer(bidToken, AddressBook.treasury(), auctionFee);
         }
 
         // Safely transfer Royalty Fees to Creator
@@ -203,7 +204,7 @@ contract DarkMarketAuction is
 
     /// @inheritdoc IDarkMarketAuction
     function cancelSpecificAuction(uint256 auctionId) external restricted {
-        if (auctionId >= nextAuctionId()) revert InvalidAuction(auctionId);
+        if (auctionId > nextAuctionId()) revert InvalidAuction(auctionId);
         Auction storage auction = _getAuction(auctionId);
 
         if (auction.highestBidder != address(0)) {
@@ -214,20 +215,19 @@ contract DarkMarketAuction is
         }
 
         for (uint i; i < auction.tokens.length; i++) {
-            // Safely transfer all auctioned tokens to the highest bidder
             if (auction.tokens[i].tokenType == TokenType.ERC721) {
                 IERC721(auction.tokens[i].tokenAddress).safeTransferFrom(
-                address(this),
-                auction.highestBidder,
-                auction.tokens[i].tokenId
+                    address(this),
+                    auction.seller,
+                    auction.tokens[i].tokenId
                 );
-            } else if (auction.tokens[i].tokenType     == TokenType.ERC1155) {
+            } else if (auction.tokens[i].tokenType == TokenType.ERC1155) {
                 IERC1155(auction.tokens[i].tokenAddress).safeTransferFrom(
-                address(this),
-                auction.highestBidder,
-                auction.tokens[i].tokenId,
-                auction.tokens[i].tokenQuantity,
-                ""
+                    address(this),
+                    auction.seller,
+                    auction.tokens[i].tokenId,
+                    auction.tokens[i].tokenQuantity,
+                    ""
                 );
             }
         }
@@ -289,12 +289,6 @@ contract DarkMarketAuction is
     }
 
     /// @inheritdoc IDarkMarketAuction
-    function setTreasury(address _treasury) external restricted {
-        _setTreasury(_treasury);
-        emit TreasuryUpdated(_treasury);
-    }
-
-    /// @inheritdoc IDarkMarketAuction
     function setMaxPayment(uint256 _maxPmt) external restricted {
         require(_maxPmt <= 1000, "Fees must be below 10%");
         _setMaxPayment(_maxPmt);
@@ -310,21 +304,26 @@ contract DarkMarketAuction is
         if (auction.status != AuctionStatus.Open) revert AuctionHasBids();
 
         // Transfer all tokens back to the seller
+        uint256 tokenCount = auction.tokens.length;
+        for (uint i; i < tokenCount; i++) {
+            TokenDetail memory token = auction.tokens[i];
+            IERC721(token.tokenAddress).transferFrom(address(this), auction.seller, token.tokenId);
+        }
+
         for (uint i; i < auction.tokens.length; i++) {
-            // Safely transfer all auctioned tokens to the highest bidder
             if (auction.tokens[i].tokenType == TokenType.ERC721) {
                 IERC721(auction.tokens[i].tokenAddress).safeTransferFrom(
-                address(this),
-                auction.highestBidder,
-                auction.tokens[i].tokenId
+                    address(this),
+                    auction.seller,
+                    auction.tokens[i].tokenId
                 );
-            } else if (auction.tokens[i].tokenType     == TokenType.ERC1155) {
+            } else if (auction.tokens[i].tokenType == TokenType.ERC1155) {
                 IERC1155(auction.tokens[i].tokenAddress).safeTransferFrom(
-                address(this),
-                auction.highestBidder,
-                auction.tokens[i].tokenId,
-                auction.tokens[i].tokenQuantity,
-                ""
+                    address(this),
+                    auction.seller,
+                    auction.tokens[i].tokenId,
+                    auction.tokens[i].tokenQuantity,
+                    ""
                 );
             }
         }

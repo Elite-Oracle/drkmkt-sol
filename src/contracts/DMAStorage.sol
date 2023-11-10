@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.0.0) (utils/ContextUpgradable, Initializable)
+// OpenZeppelin Contracts (last updated v5.0.0) (utils/Pausable.sol)
 
 pragma solidity ^0.8.20;
 
@@ -9,7 +9,13 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {IDarkMarketAuctionStructures} from  "./interfaces/IDarkMarketAuctionStructures.sol";
 
 /**
- * @dev Abstract Contract to store State Variables
+ * @dev Contract module which allows children to implement an emergency stop
+ * mechanism that can be triggered by an authorized account.
+ *
+ * This module is used through inheritance. It will make available the
+ * modifiers `whenNotPaused` and `whenPaused`, which can be applied to
+ * the functions of your contract. Note that they will not be pausable by
+ * simply including this module, only once the modifiers are put in place.
  */
 abstract contract DarkMarketAuctionStorage is Initializable, ContextUpgradeable {
     /// @custom:storage-location erc7201:openzeppelin.storage.DarkMarketAuction
@@ -22,7 +28,6 @@ abstract contract DarkMarketAuctionStorage is Initializable, ContextUpgradeable 
         uint256 _maxPayment;
         uint256 _maxAssets;
         uint256 _extraTime;
-        address _treasury;
         mapping(uint256 => IDarkMarketAuctionStructures.Auction) _auctions;
     }
 
@@ -48,7 +53,6 @@ abstract contract DarkMarketAuctionStorage is Initializable, ContextUpgradeable 
         $._maxIncentive = 12;
         $._maxPayment = 1000;
         $._maxAssets = 20;
-        $._treasury = 0x419C3657532aaD16955291AF7942fea9A1b6d010;
     }
 
     /**
@@ -101,16 +105,6 @@ abstract contract DarkMarketAuctionStorage is Initializable, ContextUpgradeable 
         return $._extraTime;
     }
 
-    function treasury() public view returns (address) {
-        DMAStorage storage $ = _getDMAStorage();
-        return $._treasury;
-    }
-
-    function _setTreasury(address treasury_) internal {
-        DMAStorage storage $ = _getDMAStorage();
-        $._treasury = treasury_;
-    }
-
     function _setNextAuctionId(uint256 nextAuctionId_) internal {
         DMAStorage storage $ = _getDMAStorage();
         $._nextAuctionId = nextAuctionId_;
@@ -153,8 +147,7 @@ abstract contract DarkMarketAuctionStorage is Initializable, ContextUpgradeable 
 
     function _getNextAuctionId() internal returns (uint256) {
         DMAStorage storage $ = _getDMAStorage();
-        uint256 nextAuctionId_ = $._nextAuctionId;
-        $._nextAuctionId = nextAuctionId_++;
+        uint256 nextAuctionId_ = ++$._nextAuctionId;
         return nextAuctionId_;
     }
 
