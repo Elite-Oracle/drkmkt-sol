@@ -214,11 +214,22 @@ contract DarkMarketAuction is
         }
 
         for (uint i; i < auction.tokens.length; i++) {
-            IERC721(auction.tokens[i].tokenAddress).safeTransferFrom(
+            // Safely transfer all auctioned tokens to the highest bidder
+            if (auction.tokens[i].tokenType == TokenType.ERC721) {
+                IERC721(auction.tokens[i].tokenAddress).safeTransferFrom(
                 address(this),
-                auction.seller,
+                auction.highestBidder,
                 auction.tokens[i].tokenId
-            );
+                );
+            } else if (auction.tokens[i].tokenType     == TokenType.ERC1155) {
+                IERC1155(auction.tokens[i].tokenAddress).safeTransferFrom(
+                address(this),
+                auction.highestBidder,
+                auction.tokens[i].tokenId,
+                auction.tokens[i].tokenQuantity,
+                ""
+                );
+            }
         }
 
         auction.status = AuctionStatus.Cancelled;
@@ -299,10 +310,23 @@ contract DarkMarketAuction is
         if (auction.status != AuctionStatus.Open) revert AuctionHasBids();
 
         // Transfer all tokens back to the seller
-        uint256 tokenCount = auction.tokens.length;
-        for (uint i; i < tokenCount; i++) {
-            TokenDetail memory token = auction.tokens[i];
-            IERC721(token.tokenAddress).transferFrom(address(this), auction.seller, token.tokenId);
+        for (uint i; i < auction.tokens.length; i++) {
+            // Safely transfer all auctioned tokens to the highest bidder
+            if (auction.tokens[i].tokenType == TokenType.ERC721) {
+                IERC721(auction.tokens[i].tokenAddress).safeTransferFrom(
+                address(this),
+                auction.highestBidder,
+                auction.tokens[i].tokenId
+                );
+            } else if (auction.tokens[i].tokenType     == TokenType.ERC1155) {
+                IERC1155(auction.tokens[i].tokenAddress).safeTransferFrom(
+                address(this),
+                auction.highestBidder,
+                auction.tokens[i].tokenId,
+                auction.tokens[i].tokenQuantity,
+                ""
+                );
+            }
         }
 
         auction.status = AuctionStatus.Cancelled;
